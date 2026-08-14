@@ -142,6 +142,66 @@ contain student work.
 
 ---
 
+## Testing it
+
+### After the first build
+
+```bash
+docker compose exec amc amc-selftest
+```
+
+`amc-selftest` is the honest test: it does not just check that things are
+installed, it compiles a throwaway two-copy exam with AMC's command line, loads
+the resulting layout into a database, and rasterizes the PDF — the same three
+operations the GUI performs when you press *Update documents* and then capture
+scans. It takes about half a minute and prints a pass/fail line per check:
+
+```
+Tool chain              auto-multiple-choice, pdflatex, xelatex, Xtigervnc,
+                        websockify, automultiplechoice.sty, pgfplots, tgtermes
+Desktop and remote      X on :1, XFCE running, noVNC on 6080, VNC on 5901
+Wiring                  repo mounted and writable, git works, projects visible,
+                        AMC preferences seeded, GitHub SSH authentication
+Pipeline                AMC compiles a 2-copy exam, layout database builds,
+                        ImageMagick can rasterize a PDF
+```
+
+Exit status is 0 only when every required check passes. `-q` skips the compile
+and only reports what is installed. Warnings (missing Thai font, no SSH agent)
+never fail the run.
+
+Each failure line carries the fix. The two worth knowing in advance:
+*"ImageMagick refuses to read PDF"* means the policy patch missed, so rebuild
+with `--no-cache`; *"automultiplechoice.sty not on the LaTeX search path"* means
+the kpathsea database is stale, same fix.
+
+### Before rebuilding, on any machine
+
+The scripts and the Compose file can be checked without Docker:
+
+```bash
+bash -n entrypoint.sh bin/*     # shell syntax
+docker compose config           # resolves .env and validates the Compose file
+```
+
+### That the exam itself is still sound
+
+Different question, different tool — `amc-check` runs the exam repo's own
+checkers (structure and draw counts, answer-tells, table widths) and is what to
+run after editing questions, before compiling:
+
+```bash
+docker compose exec amc amc-check /work/repo/exam/888102-mt
+```
+
+### End to end, by hand
+
+The self-test proves the machinery; only you can confirm the exam is right.
+Set `\NumCopies` to 2 in `config.tex`, press *Update documents*, and read
+`DOC-sujet.pdf` — then print one copy, fill it in, scan it, and run it through
+*Data capture* and *Marking*. That single round trip is what catches a
+misconfigured answer sheet before 250 students sit the paper.
+
 ## Configuration
 
 Everything lives in `.env`; see `.env.example` for the full list with comments.
