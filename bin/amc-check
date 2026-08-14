@@ -1,0 +1,63 @@
+#!/bin/bash
+# Run an exam repo's own pre-compile checkers before letting AMC compile.
+#
+# These live in the exam repo (not in this image) because they encode that
+# repo's rules — one question per \element, draw counts that fit the bank,
+# no answer-tells, tables that fit the column. This is just the runner: it
+# finds them next to the project and reports which ones passed.
+#
+# Usage:
+#   amc-check <project-dir>          # e.g. amc-check /work/repo/exam/888102-mt
+#   amc-check                        # uses the current directory
+
+set -uo pipefail
+
+project=${1:-$PWD}
+project=${project%/}
+[ -d "$project" ] || { echo "no such directory: $project" >&2; exit 1; }
+
+root=$(dirname "$project")            # the exam/ folder holding the checkers
+name=$(basename "$project")
+
+runner() {
+  if command -v uv >/dev/null 2>&1; then uv run "$@"; else python3 "$@"; fi
+}
+
+fail=0
+ran=0
+
+cd "$root" || exit 1
+
+for check in \
+  "check_questions.py $name" \
+  "check_answer_tells.py questions" \
+  "measure_widths.py $name"
+do
+  script=${check%% *}
+  args=${check#* }
+  if [ ! -f "$script" ]; then
+    echo "-- skipped: $script not found in $root"
+    continue
+  fi
+  echo "== $script $args"
+  # shellcheck disable=SC2086
+  if runner "$script" $args; then
+    ran=$((ran + 1))
+  else
+    echo "!! $script reported problems"
+    fail=1
+  fi
+  echo
+done
+
+if [ "$ran" = 0 ]; then
+  echo "no checkers found in $root — nothing to verify" >&2
+  exit 0
+fi
+
+if [ "$fail" = 0 ]; then
+  echo "all checks passed — safe to compile in AMC"
+else
+  echo "fix the problems above before compiling" >&2
+fi
+exit "$fail"

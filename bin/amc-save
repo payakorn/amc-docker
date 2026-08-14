@@ -1,0 +1,67 @@
+#!/bin/bash
+# Commit the exam repo and sync it with GitHub, from inside the container.
+#
+# The repo is bind-mounted, so the same working tree is visible on the Mac —
+# this is a convenience for when you are already inside the noVNC desktop and
+# do not want to switch back to a macOS terminal.
+#
+# Usage:
+#   amc-save                       # commit everything, pull, push
+#   amc-save -m "add ch9 questions"
+#   amc-save -n                    # commit + pull only, do not push
+#   amc-save -C /work/repo         # act on a different repo
+
+set -euo pipefail
+
+repo=${AMC_REPO:-/work/repo}
+message=""
+push=1
+
+while getopts ":m:C:nh" opt; do
+  case "$opt" in
+    m) message=$OPTARG ;;
+    C) repo=$OPTARG ;;
+    n) push=0 ;;
+    h) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+
+cd "$repo" || { echo "not a directory: $repo" >&2; exit 1; }
+git rev-parse --git-dir >/dev/null 2>&1 || { echo "$repo is not a git repository" >&2; exit 1; }
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+echo "repo:   $repo"
+echo "branch: $branch"
+echo
+
+if [ -n "$(git status --porcelain)" ]; then
+  git status --short
+  echo
+  [ -n "$message" ] || message="AMC session $(date '+%Y-%m-%d %H:%M')"
+  git add -A
+  git commit -m "$message"
+  echo
+else
+  echo "nothing to commit — working tree clean"
+  echo
+fi
+
+if git remote get-url origin >/dev/null 2>&1; then
+  echo "== pulling"
+  if ! git pull --no-rebase origin "$branch"; then
+    echo
+    echo "!! pull failed (likely a conflict). Resolve it in a terminal, then run amc-save again." >&2
+    exit 1
+  fi
+  if [ "$push" = 1 ]; then
+    echo
+    echo "== pushing"
+    git push origin "$branch"
+  fi
+else
+  echo "no 'origin' remote configured — skipping pull/push"
+fi
+
+echo
+echo "done."

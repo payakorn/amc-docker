@@ -1,0 +1,4 @@
+.env
+fonts/*
+!fonts/.gitkeep
+!fonts/README.md

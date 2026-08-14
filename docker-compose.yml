@@ -1,0 +1,56 @@
+services:
+  amc:
+    build:
+      context: .
+      args:
+        UID: ${HOST_UID:-1000}
+        GID: ${HOST_GID:-1000}
+    image: amc-desktop:latest
+    container_name: amc
+    hostname: amc
+
+    ports:
+      # noVNC web client — this is the one you actually use, in Safari/Chrome.
+      - "${BIND_ADDR:-127.0.0.1}:${NOVNC_PORT:-6080}:6080"
+      # Raw VNC, for macOS Screen Sharing (vnc://localhost:5901). Smoother than
+      # the browser for long marking sessions; drop this line if unused.
+      - "${BIND_ADDR:-127.0.0.1}:${VNC_PORT:-5901}:5901"
+
+    environment:
+      VNC_PASSWORD: ${VNC_PASSWORD:-amc}
+      VNC_GEOMETRY: ${VNC_GEOMETRY:-1600x1000}
+      # Where AMC looks for projects: the exam/ folder inside the mounted repo.
+      AMC_PROJECTS_DIR: /work/repo/${AMC_PROJECTS_SUBDIR:-exam}
+      AMC_LATEX_ENGINE: ${AMC_LATEX_ENGINE:-pdflatex}
+      AMC_AUTOSTART: ${AMC_AUTOSTART:-1}
+      AMC_REPO: /work/repo
+      GIT_USER_NAME: ${GIT_USER_NAME:-}
+      GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
+
+    volumes:
+      # The exam repository, live: edits and compiled PDFs land straight in the
+      # working tree on the Mac, and git inside the container is the same repo.
+      - ${EXAM_REPO:?set EXAM_REPO in .env — see .env.example}:/work/repo
+      # SSH keys for pushing to GitHub, read-only (copied and re-permissioned
+      # inside the container by the entrypoint).
+      - ${SSH_DIR:?set SSH_DIR in .env — an absolute path, Compose does not expand ~}:/ssh-host:ro
+      # Drop extra .ttf/.otf here (e.g. TH Sarabun New) to make them available
+      # to XeLaTeX and to the desktop.
+      - ./fonts:/usr/local/share/fonts/custom:ro
+      # AMC's own settings, window sizes and templates, kept across rebuilds.
+      - amc-home:/home/amc
+
+    # AMC's scan analysis is image-heavy; the 64MB default /dev/shm is not enough.
+    shm_size: "1gb"
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:6080/vnc.html"]
+      interval: 30s
+      timeout: 5s
+      start_period: 40s
+      retries: 3
+
+volumes:
+  amc-home:

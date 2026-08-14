@@ -1,0 +1,134 @@
+#!/bin/bash
+# Give an exam folder the options.xml that makes AMC recognise it as a project.
+#
+# Why this exists: options.xml is generated output and every one of these exam
+# repos gitignores it, so a freshly cloned project folder (questions, groups.tex
+# and config.tex all present) is invisible in AMC's project list. AMC has no
+# "adopt this existing folder" button — it only creates projects in new, empty
+# directories — so this writes the file directly.
+#
+# Usage:
+#   amc-project-init [-e ENGINE] [-t TEXFILE] [-f] <project-dir>
+#
+#   -e  LaTeX engine: pdflatex (default) or xelatex — use xelatex for Thai exams
+#   -t  source file relative to the project dir (default: groups.tex)
+#   -f  overwrite an existing options.xml
+#
+# Example:
+#   amc-project-init /work/repo/exam/888102-mt
+#   amc-project-init -e xelatex /work/repo/exam/final-2026
+
+set -euo pipefail
+
+engine=pdflatex
+texfile=groups.tex
+force=0
+
+while getopts ":e:t:fh" opt; do
+  case "$opt" in
+    e) engine=$OPTARG ;;
+    t) texfile=$OPTARG ;;
+    f) force=1 ;;
+    h) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+dir=${1:-}
+[ -n "$dir" ] || { echo "usage: amc-project-init [-e ENGINE] [-t TEXFILE] [-f] <project-dir>" >&2; exit 2; }
+[ -d "$dir" ] || { echo "no such directory: $dir" >&2; exit 1; }
+
+case "$engine" in
+  pdflatex|xelatex|latex|lualatex) ;;
+  *) echo "unsupported engine: $engine (use pdflatex or xelatex)" >&2; exit 2 ;;
+esac
+
+if [ ! -f "$dir/$texfile" ]; then
+  echo "warning: $dir/$texfile does not exist — AMC will not compile until it does" >&2
+fi
+
+out=$dir/options.xml
+if [ -e "$out" ] && [ "$force" != 1 ]; then
+  echo "$out already exists (use -f to overwrite)" >&2
+  exit 1
+fi
+
+cat > "$out" <<XML
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<project>
+  <add_corrected></add_corrected>
+  <after_export>file</after_export>
+  <allocate_ids>0</allocate_ids>
+  <annote_position>cases</annote_position>
+  <annote_rtl></annote_rtl>
+  <assoc_code></assoc_code>
+  <auto_capture_mode>-1</auto_capture_mode>
+  <build_dir>.</build_dir>
+  <code_examen></code_examen>
+  <cr>cr</cr>
+  <data>data</data>
+  <doc_catalog>DOC-catalog.pdf</doc_catalog>
+  <doc_indiv_solution>DOC-indiv-solution.pdf</doc_indiv_solution>
+  <doc_question>DOC-sujet.pdf</doc_question>
+  <doc_setting>DOC-calage.xy</doc_setting>
+  <doc_solution>DOC-corrige.pdf</doc_solution>
+  <email_col></email_col>
+  <encodage_csv>UTF-8</encodage_csv>
+  <encodage_liste>UTF-8</encodage_liste>
+  <export_csv_columns>student.copy,student.key,student.name</export_csv_columns>
+  <export_csv_separateur>;</export_csv_separateur>
+  <export_csv_ticked></export_csv_ticked>
+  <export_include_abs></export_include_abs>
+  <export_ncols>2</export_ncols>
+  <export_ods_columns>student.copy,student.key,student.name</export_ods_columns>
+  <export_ods_group>0</export_ods_group>
+  <export_ods_groupsep>.</export_ods_groupsep>
+  <export_ods_stats></export_ods_stats>
+  <export_ods_statsindic></export_ods_statsindic>
+  <export_pagesize>a4</export_pagesize>
+  <export_sort>n</export_sort>
+  <filter>latex</filter>
+  <filtered_source>DOC-filtered.tex</filtered_source>
+  <format_export>ods</format_export>
+  <liste_key></liste_key>
+  <listeetudiants></listeetudiants>
+  <maj_bareme>1</maj_bareme>
+  <modele_regroupement></modele_regroupement>
+  <moteur_latex_b>${engine}</moteur_latex_b>
+  <multi_scan_mode>strict</multi_scan_mode>
+  <name_field_type></name_field_type>
+  <nom_examen></nom_examen>
+  <nombre_copies>0</nombre_copies>
+  <note_arrondi>inf</note_arrondi>
+  <note_grain>0.5</note_grain>
+  <note_max>20</note_max>
+  <note_max_plafond>1</note_max_plafond>
+  <note_min></note_min>
+  <note_null>0</note_null>
+  <notes>notes.xml</notes>
+  <pdf_password></pdf_password>
+  <pdf_password_key></pdf_password_key>
+  <pdf_password_use></pdf_password_use>
+  <pdfform>0</pdfform>
+  <postcorrect_copy>0</postcorrect_copy>
+  <postcorrect_set_multiple></postcorrect_set_multiple>
+  <postcorrect_student>0</postcorrect_student>
+  <regroupement_compose></regroupement_compose>
+  <regroupement_copies>ALL</regroupement_copies>
+  <regroupement_type>STUDENTS</regroupement_type>
+  <seuil>0.5</seuil>
+  <seuil_up>1</seuil_up>
+  <texsrc>%PROJET/${texfile}</texsrc>
+  <verdict>%(ID)
+Mark: %s/%m (total score: %S/%M)</verdict>
+  <verdict_q>&quot;%s/%m&quot;</verdict_q>
+  <verdict_qc>&quot;X&quot;</verdict_qc>
+</project>
+XML
+
+mkdir -p "$dir/data" "$dir/cr/corrections/jpg" "$dir/cr/corrections/pdf" \
+         "$dir/cr/diagnostic" "$dir/cr/zooms" "$dir/scans" "$dir/exports"
+
+echo "wrote $out (engine: $engine, source: $texfile)"
+echo "Open AMC and pick '$(basename "$dir")' from the project list."
