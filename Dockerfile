@@ -53,13 +53,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN apt-get update && apt-get install -y --no-install-recommends \
       # minimal XFCE session (a full desktop is not needed, but AMC's dialogs
       # want a window manager, a panel and a place to put files)
-      xfce4-session xfwm4 xfdesktop4 xfce4-panel xfce4-appfinder \
+      xfce4-session xfwm4 xfdesktop4 xfce4-panel xfce4-settings xfce4-appfinder \
       xfce4-terminal thunar mousepad ristretto evince \
-      dbus-x11 x11-xserver-utils xdg-utils \
+      # x11-utils is what provides xdpyinfo, which the entrypoint waits on to
+      # know the X server is actually up before starting the session.
+      dbus-x11 x11-utils x11-xserver-utils xdg-utils \
       # remote display: Xvnc serves :1, websockify serves noVNC's web client.
       # The websockify command comes from python3-websockify — Debian's
       # "websockify" binary package ships only the rebind helper.
-      tigervnc-standalone-server tigervnc-common \
+      # Note Debian's naming: the server is Xtigervnc (not Xvnc) and the
+      # password tool is tigervncpasswd, in tigervnc-tools.
+      tigervnc-standalone-server tigervnc-common tigervnc-tools \
       novnc python3-websockify \
       # question editing, version control, and moving files in and out
       git openssh-client ca-certificates curl wget \

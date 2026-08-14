@@ -17,7 +17,7 @@ services:
       - "${BIND_ADDR:-127.0.0.1}:${VNC_PORT:-5901}:5901"
 
     environment:
-      VNC_PASSWORD: ${VNC_PASSWORD:-amc}
+      VNC_PASSWORD: ${VNC_PASSWORD:-amc2026}
       VNC_GEOMETRY: ${VNC_GEOMETRY:-1600x1000}
       # Where AMC looks for projects: the exam/ folder inside the mounted repo.
       AMC_PROJECTS_DIR: /work/repo/${AMC_PROJECTS_SUBDIR:-exam}

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Bring up the desktop that AMC runs on, then hand it to the browser.
 #
-#   Xvnc :1            the X server, with its framebuffer exported as VNC
+#   Xtigervnc :1       the X server, with its framebuffer exported as VNC
 #   xfce4-session      window manager, panel, desktop icons
 #   websockify         wraps VNC in WebSocket + serves noVNC's HTML client
 #
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-: "${VNC_PASSWORD:=amc}"
+: "${VNC_PASSWORD:=amc2026}"   # >=6 chars: VNC password tools reject shorter
 : "${VNC_GEOMETRY:=1600x1000}"
 : "${VNC_DEPTH:=24}"
 : "${NOVNC_PORT:=6080}"
@@ -32,8 +32,13 @@ log() { printf '[amc-entrypoint] %s\n' "$*"; }
 # native VNC clients) refuse a server that offers no authentication, and this
 # is what lets you connect with vnc://localhost:5901 instead of noVNC.
 # ---------------------------------------------------------------------------
+# Debian ships TigerVNC's password tool as tigervncpasswd; keep vncpasswd as a
+# fallback in case the packaging changes back.
+vncpass_tool=$(command -v tigervncpasswd || command -v vncpasswd || true)
+[ -n "$vncpass_tool" ] || { log "no vncpasswd tool found"; exit 1; }
+
 mkdir -p "$HOME/.vnc"
-printf '%s\n' "$VNC_PASSWORD" | vncpasswd -f > "$HOME/.vnc/passwd"
+printf '%s\n' "$VNC_PASSWORD" | "$vncpass_tool" -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
 
 # ---------------------------------------------------------------------------
@@ -110,7 +115,7 @@ Type=Application
 Name=Save & Push to GitHub
 Comment=Commit everything in the exam repo, pull, then push
 Icon=folder-remote
-Exec=xfce4-terminal --title="Save & Push" --hold --command="amc-save"
+Exec=xfce4-terminal --hold --command amc-save
 Terminal=false
 DESKTOP
 chmod +x "$HOME/Desktop/amc-sync.desktop"
@@ -149,16 +154,23 @@ trap cleanup EXIT INT TERM
 
 rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
 
-log "starting Xvnc on :1 (${VNC_GEOMETRY}, rfb port ${VNC_PORT})"
-Xvnc :1 \
+vnc_server=$(command -v Xtigervnc || command -v Xvnc || true)
+[ -n "$vnc_server" ] || { log "no VNC X server found"; exit 1; }
+
+log "starting $(basename "$vnc_server") on :1 (${VNC_GEOMETRY}, rfb port ${VNC_PORT})"
+"$vnc_server" :1 \
   -geometry "$VNC_GEOMETRY" \
   -depth "$VNC_DEPTH" \
   -rfbport "$VNC_PORT" \
   -rfbauth "$HOME/.vnc/passwd" \
+  -SecurityTypes VncAuth \
   -AlwaysShared \
-  -AcceptSetDesktopSize=1 \
   -desktop "Auto Multiple Choice" \
-  -SecurityTypes VncAuth &
+  -localhost=0 &
+
+# -localhost=0 matters for the published 5901 port: Docker forwards it through
+# the bridge, so a native VNC client arrives from the gateway address, not from
+# 127.0.0.1, and a localhost-only server would refuse it.
 
 for _ in $(seq 1 50); do
   xdpyinfo -display :1 >/dev/null 2>&1 && break
