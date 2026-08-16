@@ -14,8 +14,11 @@ services:
     # listen on 8080/6080/5901, and the healthcheck below talks to those.
     ports:
       # The web interface: edit questions, check, compile, capture, mark,
-      # export. Most sessions live here — if you open one port, open this one.
-      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-6090}:8080"
+      # export. Most sessions live here — if you open one port, open this
+      # one. It has its own bind address, separate from the desktop's below:
+      # opening the batch workflow to the LAN doesn't have to mean opening
+      # unencrypted VNC too.
+      - "${WEB_BIND_ADDR:-${BIND_ADDR:-127.0.0.1}}:${WEB_PORT:-6090}:8080"
       # noVNC web client — the full AMC desktop, for reviewing ambiguous boxes
       # and matching papers to students.
       - "${BIND_ADDR:-127.0.0.1}:${NOVNC_PORT:-6091}:6080"
@@ -38,8 +41,10 @@ services:
       AMC_WEB_TOKEN: ${AMC_WEB_TOKEN:-}
       # The container cannot see how Docker published its ports, so tell it.
       # Anything other than a loopback address means "reachable from the LAN",
-      # and the entrypoint then insists on a web token and a real VNC password.
-      AMC_BIND_ADDR: ${BIND_ADDR:-127.0.0.1}
+      # and the entrypoint then insists on a web token. This is the web
+      # service's own bind address — it's the one running shell commands, so
+      # it's the one whose exposure decides whether a token gets minted.
+      AMC_BIND_ADDR: ${WEB_BIND_ADDR:-${BIND_ADDR:-127.0.0.1}}
       # Same reason: the web interface's "open the desktop" button and the URLs
       # in the startup log are for a browser, so they need the published ports,
       # not the internal 6080/8080.

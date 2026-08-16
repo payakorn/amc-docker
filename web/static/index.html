@@ -395,21 +395,41 @@ async function selectProject(name) {
   state.project = name;
   if (!name) { render(); return; }
   localStorage.setItem("amcProject", name);
-  await Promise.all([refreshStatus(), loadFiles()]);
+  await Promise.all([refreshStatus(), loadFiles(), refreshGitStatus()]);
 }
+
+// A project name can be "repo/project" once the mounted folder spans several
+// repos, so every path segment built from it must be percent-encoded — a raw
+// "/" in the URL would otherwise be read as a path separator, not part of the
+// name.
+const pid = () => encodeURIComponent(state.project);
 
 async function refreshStatus() {
   if (!state.project) return;
-  state.status = await api(`/api/projects/${state.project}/status`);
+  state.status = await api(`/api/projects/${pid()}/status`);
   renderChips();
   await renderPipeline();
 }
 
 async function loadFiles() {
   if (!state.project) return;
-  const data = await api(`/api/projects/${state.project}/files`);
+  const data = await api(`/api/projects/${pid()}/files`);
   state.files = data.files;
   renderFiles();
+}
+
+async function refreshGitStatus() {
+  if (!state.project) { $("btn-sync").disabled = true; return; }
+  try {
+    const git = await api(`/api/git/status?project=${pid()}`);
+    if (git.available) {
+      $("btn-sync").disabled = false;
+      $("btn-sync").title = `Branch ${git.branch}${git.dirty ? ` · ${git.dirty} change(s)` : " · clean"}`;
+      $("btn-sync").textContent = git.dirty ? `Sync (${git.dirty})` : "Sync";
+    } else {
+      $("btn-sync").disabled = true;
+    }
+  } catch (_) { $("btn-sync").disabled = true; }
 }
 
 /* ---------------------------------------------------------------- render */
@@ -506,7 +526,7 @@ async function renderPipeline() {
       </div>`;
     $("btn-init").addEventListener("click", async () => {
       try {
-        await api(`/api/projects/${state.project}/init`, {
+        await api(`/api/projects/${pid()}/init`, {
           method: "POST",
           body: { engine: $("init-engine").value, texfile: $("init-tex").value },
         });
@@ -518,7 +538,7 @@ async function renderPipeline() {
     return;
   }
 
-  const artifacts = await api(`/api/projects/${state.project}/artifacts`);
+  const artifacts = await api(`/api/projects/${pid()}/artifacts`);
   const needs = s.needs_desktop || [];
   const cap = s.capture || {};
 
@@ -589,14 +609,14 @@ async function renderPipeline() {
     </div>`;
 
   $("handoff-link")?.addEventListener("click", (e) => { e.preventDefault(); openDesktop(); });
-  $("btn-check").addEventListener("click", () => runJob("check", `/api/projects/${state.project}/check`));
+  $("btn-check").addEventListener("click", () => runJob("check", `/api/projects/${pid()}/check`));
   $("btn-compile").addEventListener("click", doCompile);
   $("btn-capture")?.addEventListener("click", () =>
-    runJob("capture", `/api/projects/${state.project}/capture`));
+    runJob("capture", `/api/projects/${pid()}/capture`));
   $("btn-mark")?.addEventListener("click", () =>
-    runJob("mark", `/api/projects/${state.project}/mark`, { associate: true }));
+    runJob("mark", `/api/projects/${pid()}/mark`, { associate: true }));
   $("btn-export")?.addEventListener("click", () =>
-    runJob("export", `/api/projects/${state.project}/export`, { format: $("export-format").value }));
+    runJob("export", `/api/projects/${pid()}/export`, { format: $("export-format").value }));
 
   wireDropzone();
 }
@@ -622,7 +642,7 @@ async function uploadScans(fileList) {
   const form = new FormData();
   for (const file of fileList) form.append("files", file);
   try {
-    const res = await api(`/api/projects/${state.project}/scans`, { method: "POST", body: form });
+    const res = await api(`/api/projects/${pid()}/scans`, { method: "POST", body: form });
     toast(`uploaded ${res.saved.length} file(s)`);
     await renderPipeline();
   } catch (e) { toast(e.message, true); }
@@ -734,12 +754,12 @@ async function pollJob() {
 async function doCompile() {
   const raw = $("copies")?.value;
   const body = raw ? { copies: Number(raw) } : {};
-  await runJob("compile", `/api/projects/${state.project}/compile`, body);
+  await runJob("compile", `/api/projects/${pid()}/compile`, body);
 }
 
 async function checkThenCompile() {
   if (!state.project || state.job) return;
-  await runJob("check", `/api/projects/${state.project}/check`);
+  await runJob("check", `/api/projects/${pid()}/check`);
   // Wait for the checkers before compiling: compiling a bank whose draw counts
   // are wrong just buries the real error under LaTeX output.
   const wait = setInterval(async () => {
@@ -765,7 +785,8 @@ function openDesktop() {
 async function syncRepo() {
   const message = prompt("Commit message:", `AMC session ${new Date().toISOString().slice(0, 16).replace("T", " ")}`);
   if (message === null) return;
-  await runJob("sync", "/api/git/sync", { message, push: true });
+  await runJob("sync", "/api/git/sync", { message, push: true, project: state.project || "" });
+  await refreshGitStatus();
 }
 
 /* ------------------------------------------------------------------ init */
@@ -779,18 +800,10 @@ async function init() {
   $("repo-name").textContent = state.config.repo.split("/").filter(Boolean).pop() || "workbench";
   state.project = localStorage.getItem("amcProject");
 
+  // loadProjects() picks a project and, via selectProject(), already calls
+  // refreshGitStatus() for it — no separate git/status call needed here.
   try { await loadProjects(); }
   catch (e) { toast(e.message, true); }
-
-  try {
-    const git = await api("/api/git/status");
-    if (git.available) {
-      $("btn-sync").title = `Branch ${git.branch}${git.dirty ? ` · ${git.dirty} change(s)` : " · clean"}`;
-      $("btn-sync").textContent = git.dirty ? `Sync (${git.dirty})` : "Sync";
-    } else {
-      $("btn-sync").disabled = true;
-    }
-  } catch (_) { $("btn-sync").disabled = true; }
 
   /* events */
   $("project-select").addEventListener("change", (e) => selectProject(e.target.value));

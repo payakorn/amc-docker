@@ -101,8 +101,12 @@ def safe_path(raw: str, root: Path = None) -> Path:
 
 
 def project_path(name: str) -> Path:
-    # Project names are single directory names, never paths.
-    if not re.fullmatch(r"[A-Za-z0-9._-]+", name or ""):
+    # A project name is a relative path scanned up from PROJECTS_DIR — a bare
+    # directory name in the single-repo layout, or "repo/project" once
+    # PROJECTS_DIR spans several repos. Segment characters are restricted, but
+    # a segment of only "." or ".." would still pass that check, so the
+    # resolve()+containment check below is the real guard, same as safe_path.
+    if not re.fullmatch(r"[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", name or ""):
         raise HTTPException(status_code=400, detail="invalid project name")
     path = (PROJECTS_DIR / name).resolve()
     if PROJECTS_DIR not in path.parents:
@@ -110,6 +114,18 @@ def project_path(name: str) -> Path:
     if not path.is_dir():
         raise HTTPException(status_code=404, detail=f"no such project: {name}")
     return path
+
+
+def git_repo_root(path: Path) -> Path:
+    """The nearest .git above path, without leaving REPO. Falls back to REPO
+    itself so a plain single-repo setup behaves exactly as before."""
+    cur = path
+    while True:
+        if (cur / ".git").exists():
+            return cur
+        if cur == REPO or cur == cur.parent:
+            return REPO
+        cur = cur.parent
 
 
 # ---------------------------------------------------------------------------
@@ -250,18 +266,71 @@ async def job_cancel(job_id: str, _: None = Guard):
 # Projects.
 # ---------------------------------------------------------------------------
 
-def run_status(project: Path) -> dict:
+def run_status(project: Path, name: str | None = None) -> dict:
     """amc-status, as a dict. Never raises: a broken project still lists."""
+    label = name or project.name
     try:
         out = subprocess.run(
             ["amc-status", str(project)],
             capture_output=True, text=True, timeout=20,
         )
         if out.returncode == 0:
-            return json.loads(out.stdout)
-        return {"name": project.name, "error": out.stderr.strip()[:400]}
+            data = json.loads(out.stdout)
+            # amc-status only knows the leaf directory; a project found by the
+            # recursive scan below needs the full relative path as its name, or
+            # two projects sharing a leaf name (two repos each with a
+            # "Midterm/") would collide in the picker and in every /api/projects/{name}/... route.
+            data["name"] = label
+            return data
+        return {"name": label, "error": out.stderr.strip()[:400]}
     except (subprocess.SubprocessError, json.JSONDecodeError, OSError) as exc:
-        return {"name": project.name, "error": str(exc)}
+        return {"name": label, "error": str(exc)}
+
+
+# Directories that are never AMC projects themselves and are not worth
+# descending into while scanning for ones nested inside them.
+_SCAN_SKIP = {
+    ".git", "node_modules", "__pycache__", ".venv", "venv", ".cache",
+    "dist", "build", "target", ".next", "questions",
+}
+
+
+_AMC_MARKER = re.compile(rb"\\element\s*\{|\\usepackage(?:\[[^\]]*\])?\{automultiplechoice\}|\\begin\{AMCform\}")
+
+
+def _is_project_dir(path: Path) -> bool:
+    if (path / "options.xml").exists():
+        return True
+    # Not-yet-initialized projects have no options.xml, so the fallback is a
+    # .tex file — but scanning across ~/projects means that .tex file can
+    # belong to an unrelated paper or another app's generated output, so it
+    # only counts if it actually uses AMC's own LaTeX commands.
+    return any(_AMC_MARKER.search(f.read_bytes()[:4096]) for f in path.glob("*.tex"))
+
+
+def _scan_projects(root: Path, depth: int = 0, max_depth: int = 12) -> list[Path]:
+    """Every AMC project under root, at any depth.
+
+    Stops descending as soon as a project is found there — its own
+    subfolders (data/, cr/, exports/...) are internals, not more projects.
+    Symlinks are skipped outright to avoid loops from a repo that symlinks
+    into another one.
+    """
+    found: list[Path] = []
+    try:
+        entries = sorted(root.iterdir())
+    except OSError:
+        return found
+    for entry in entries:
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        if entry.name.startswith(".") or entry.name in _SCAN_SKIP:
+            continue
+        if _is_project_dir(entry):
+            found.append(entry)
+        elif depth < max_depth:
+            found.extend(_scan_projects(entry, depth + 1, max_depth))
+    return found
 
 
 @app.get("/api/config")
@@ -278,26 +347,16 @@ async def get_config(_: None = Guard):
 async def list_projects(_: None = Guard):
     if not PROJECTS_DIR.is_dir():
         raise HTTPException(status_code=500, detail=f"{PROJECTS_DIR} does not exist — check AMC_PROJECTS_SUBDIR")
-    projects = []
-    for entry in sorted(PROJECTS_DIR.iterdir()):
-        if not entry.is_dir() or entry.name.startswith("."):
-            continue
-        # questions/ sits beside the projects and holds the shared bank. It is
-        # full of .tex files but is not a project, and listing it as one is
-        # just noise in the picker — the editor reaches it separately.
-        if entry.name == "questions":
-            continue
-        # Otherwise a directory counts if it has a source file or has already
-        # been set up; is_project (options.xml present) distinguishes the two.
-        if not any(entry.glob("*.tex")) and not (entry / "options.xml").exists():
-            continue
-        projects.append(run_status(entry))
+    projects = [
+        run_status(entry, entry.relative_to(PROJECTS_DIR).as_posix())
+        for entry in sorted(_scan_projects(PROJECTS_DIR), key=lambda p: p.as_posix())
+    ]
     return {"projects": projects}
 
 
-@app.get("/api/projects/{name}/status")
+@app.get("/api/projects/{name:path}/status")
 async def project_status(name: str, _: None = Guard):
-    return run_status(project_path(name))
+    return run_status(project_path(name), name)
 
 
 class InitBody(BaseModel):
@@ -306,7 +365,7 @@ class InitBody(BaseModel):
     force: bool = False
 
 
-@app.post("/api/projects/{name}/init")
+@app.post("/api/projects/{name:path}/init")
 async def project_init(name: str, body: InitBody, _: None = Guard):
     path = project_path(name)
     if body.engine not in {"pdflatex", "xelatex", "lualatex", "latex"}:
@@ -333,14 +392,14 @@ class CompileBody(BaseModel):
     copies: int | None = None
 
 
-@app.post("/api/projects/{name}/check")
+@app.post("/api/projects/{name:path}/check")
 async def project_check(name: str, _: None = Guard):
     path = project_path(name)
     job = await start_job("check", name, ["amc-check", str(path)])
     return job.as_dict()
 
 
-@app.post("/api/projects/{name}/compile")
+@app.post("/api/projects/{name:path}/compile")
 async def project_compile(name: str, body: CompileBody, _: None = Guard):
     path = project_path(name)
     argv = ["amc-compile"]
@@ -353,7 +412,7 @@ async def project_compile(name: str, body: CompileBody, _: None = Guard):
     return job.as_dict()
 
 
-@app.post("/api/projects/{name}/capture")
+@app.post("/api/projects/{name:path}/capture")
 async def project_capture(name: str, _: None = Guard):
     path = project_path(name)
     job = await start_job("capture", name, ["amc-capture", str(path)])
@@ -364,7 +423,7 @@ class MarkBody(BaseModel):
     associate: bool = True
 
 
-@app.post("/api/projects/{name}/mark")
+@app.post("/api/projects/{name:path}/mark")
 async def project_mark(name: str, body: MarkBody, _: None = Guard):
     path = project_path(name)
     argv = ["amc-mark"] + ([] if body.associate else ["-A"]) + [str(path)]
@@ -376,7 +435,7 @@ class ExportBody(BaseModel):
     format: str = "csv"
 
 
-@app.post("/api/projects/{name}/export")
+@app.post("/api/projects/{name:path}/export")
 async def project_export(name: str, body: ExportBody, _: None = Guard):
     path = project_path(name)
     if body.format not in {"csv", "ods", "list"}:
@@ -389,7 +448,7 @@ async def project_export(name: str, body: ExportBody, _: None = Guard):
 # Files: the question bank, and the things the pipeline produces.
 # ---------------------------------------------------------------------------
 
-@app.get("/api/projects/{name}/files")
+@app.get("/api/projects/{name:path}/files")
 async def project_files(name: str, _: None = Guard):
     path = project_path(name)
     files = []
@@ -466,7 +525,7 @@ async def write_file(body: WriteBody, _: None = Guard):
     return {"ok": True, "modified": int(target.stat().st_mtime)}
 
 
-@app.get("/api/projects/{name}/artifacts")
+@app.get("/api/projects/{name:path}/artifacts")
 async def project_artifacts(name: str, _: None = Guard):
     path = project_path(name)
     out: dict[str, list] = {"documents": [], "exports": [], "scans": []}
@@ -507,7 +566,7 @@ async def download(path: str = Query(...), _: None = Guard):
     return FileResponse(target, filename=target.name)
 
 
-@app.post("/api/projects/{name}/scans")
+@app.post("/api/projects/{name:path}/scans")
 async def upload_scans(name: str, files: list[UploadFile], _: None = Guard):
     path = project_path(name)
     scans = path / "scans"
@@ -540,14 +599,15 @@ async def upload_scans(name: str, files: list[UploadFile], _: None = Guard):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/git/status")
-async def git_status(_: None = Guard):
+async def git_status(project: str = Query(default=""), _: None = Guard):
+    root = git_repo_root(project_path(project)) if project else REPO
     try:
         porcelain = subprocess.run(
-            ["git", "-C", str(REPO), "status", "--porcelain"],
+            ["git", "-C", str(root), "status", "--porcelain"],
             capture_output=True, text=True, timeout=20,
         )
         branch = subprocess.run(
-            ["git", "-C", str(REPO), "rev-parse", "--abbrev-ref", "HEAD"],
+            ["git", "-C", str(root), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, timeout=20,
         )
     except (subprocess.SubprocessError, OSError) as exc:
@@ -568,16 +628,18 @@ async def git_status(_: None = Guard):
 class SyncBody(BaseModel):
     message: str = ""
     push: bool = True
+    project: str = ""
 
 
 @app.post("/api/git/sync")
 async def git_sync(body: SyncBody, _: None = Guard):
-    argv = ["amc-save"]
+    root = git_repo_root(project_path(body.project)) if body.project else REPO
+    argv = ["amc-save", "-C", str(root)]
     if not body.push:
         argv.append("-n")
     if body.message.strip():
         argv += ["-m", body.message.strip()[:200]]
-    job = await start_job("sync", "__repo__", argv)
+    job = await start_job("sync", f"__repo__:{root}", argv)
     return job.as_dict()
 
 

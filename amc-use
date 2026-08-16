@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Host-side helper: pick which exam repo under ~/projects the container should
+# mount, write it into .env, and restart. Run this — don't run it for you —
+# it needs your interactive choice at the `select` prompt.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+PROJECTS_ROOT="${AMC_USE_ROOT:-$HOME/projects}"
+SELF="$(basename "$(pwd)")"
+
+echo "Scanning $PROJECTS_ROOT for exam repos (a git repo with .tex or options.xml one level down)..."
+candidates=()
+for d in "$PROJECTS_ROOT"/*/; do
+  d="${d%/}"
+  name="$(basename "$d")"
+  [ -d "$d/.git" ] || continue
+  [ "$name" = "$SELF" ] && continue
+  if find "$d" -mindepth 1 -maxdepth 1 -type d \
+       -exec sh -c 'compgen -G "$1"/*.tex >/dev/null 2>&1 || [ -f "$1/options.xml" ]' _ {} \; \
+       -print -quit 2>/dev/null | grep -q .; then
+    candidates+=("$d")
+  fi
+done
+
+if [ ${#candidates[@]} -eq 0 ]; then
+  echo "No exam repos found under $PROJECTS_ROOT (looked for a subfolder with a .tex file or options.xml)." >&2
+  exit 1
+fi
+
+echo
+echo "Which exam repo should the container mount?"
+PS3="> "
+select repo in "${candidates[@]}"; do
+  [ -n "${repo:-}" ] && break
+done
+
+sed -i.bak \
+  -e "s|^EXAM_REPO=.*|EXAM_REPO=$repo|" \
+  -e "s|^AMC_PROJECTS_SUBDIR=.*|AMC_PROJECTS_SUBDIR=.|" \
+  .env
+rm -f .env.bak
+
+echo "Set EXAM_REPO=$repo, AMC_PROJECTS_SUBDIR=. — restarting..."
+docker compose up -d
+
+web_port=$(grep -E '^WEB_PORT=' .env | cut -d= -f2)
+novnc_port=$(grep -E '^NOVNC_PORT=' .env | cut -d= -f2)
+echo
+echo "Web:     http://localhost:${web_port:-6090}/"
+echo "Desktop: http://localhost:${novnc_port:-6091}/"
