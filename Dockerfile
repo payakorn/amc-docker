@@ -68,8 +68,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       # question editing, version control, and moving files in and out
       git openssh-client ca-certificates curl wget \
       nano vim-tiny less zip unzip rsync \
-      # the exam repo's checker scripts (stdlib-only Python)
-      python3 \
+      # the exam repo's checker scripts (stdlib-only Python), and venv for the
+      # web interface's own dependencies — Debian marks the system Python
+      # externally-managed, so pip only works inside a virtual environment
+      python3 python3-venv \
       # AMC shells out to these for scan handling and PDF assembly
       poppler-utils imagemagick ghostscript \
       procps locales fonts-dejavu fonts-liberation fonts-thai-tlwg \
@@ -110,7 +112,33 @@ RUN (curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/
  || echo "uv install skipped — checkers will run under python3"
 
 # ---------------------------------------------------------------------------
-# 5. The user the desktop runs as.
+# 5. The web interface.
+#
+# A small FastAPI app that drives the amc-* scripts, so the batch half of the
+# workflow (edit questions, check, compile, capture, mark, export) can be done
+# from an ordinary browser tab instead of through the remote desktop. The
+# desktop is still there and still does the interactive parts.
+#
+# Its dependencies live in their own virtual environment rather than in the
+# system Python: AMC's own Perl/Python tooling shares this image, and a
+# FastAPI upgrade has no business being able to disturb it.
+# ---------------------------------------------------------------------------
+COPY web/ /opt/amc-web/
+
+RUN set -eux; \
+    if command -v uv >/dev/null 2>&1; then \
+      uv venv /opt/amc-web/.venv; \
+      VIRTUAL_ENV=/opt/amc-web/.venv uv pip install --no-cache \
+        fastapi "uvicorn[standard]" python-multipart; \
+    else \
+      python3 -m venv /opt/amc-web/.venv; \
+      /opt/amc-web/.venv/bin/pip install --no-cache-dir \
+        fastapi "uvicorn[standard]" python-multipart; \
+    fi; \
+    /opt/amc-web/.venv/bin/python -c "import fastapi, uvicorn, multipart"
+
+# ---------------------------------------------------------------------------
+# 6. The user the desktop runs as.
 #
 # uid/gid default to 1000 so files written into the bind-mounted repo keep
 # sane ownership on a Linux host; on macOS Docker Desktop maps this for you.
@@ -132,6 +160,6 @@ USER amc
 WORKDIR /work
 ENV HOME=/home/amc
 
-EXPOSE 6080 5901
+EXPOSE 6080 5901 8080
 
 ENTRYPOINT ["/usr/local/bin/amc-entrypoint"]

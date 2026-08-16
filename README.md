@@ -3,12 +3,18 @@
 Auto Multiple Choice is a Perl/GTK3 desktop application that exists for Linux
 only — there is no macOS build, which is why it will not install on the Mac
 mini. This repository runs the **real AMC GUI** inside a Debian container with a
-small XFCE desktop, and serves that desktop to a web browser.
+small XFCE desktop, and puts two front doors on it.
 
-You open `http://localhost:6080/`, and you get AMC itself: the project manager,
-the LaTeX source editor, *Update documents*, *Data capture*, *Marking*,
-*Reports*, the preferences dialog — all of it, unmodified. Nothing is
-reimplemented, so nothing lags behind upstream AMC and no feature is missing.
+| | | |
+|---|---|---|
+| **<http://localhost:8080/>** | the web interface | edit questions, run the checkers, compile, capture scans, mark, export |
+| **<http://localhost:6080/>** | the AMC desktop | all of AMC, unmodified — and the only place to review ambiguous boxes and match papers to students |
+
+Most of a working session is the first one: write a question, check it, rebuild
+the PDF, look at it. That is a form and a log, and a browser tab does it better
+than a remote desktop does. The moment the work becomes *looking at a scanned
+image and deciding what it says*, the desktop is the right tool, and the web
+interface says so and links to it.
 
 Debian trixie ships `auto-multiple-choice` **1.7.0-3 built for arm64**, so this
 runs natively on Apple Silicon — no emulation, no `--platform` flag, no Rosetta.
@@ -20,13 +26,17 @@ runs natively on Apple Silicon — no emulation, no `--platform` flag, no Rosett
 
 | You wanted | Where it is |
 |---|---|
-| Create a project | AMC's project manager, or `amc-project-init` for a folder cloned from git |
-| Rebuild the PDFs | AMC → *Documents* → *Update documents* |
-| Evaluate the scores | AMC → *Data capture* → *Marking* → *Reports* |
-| Change AMC settings | AMC → *Edit* → *Preferences* (per-project settings in the project tabs) |
-| Add / remove questions | Mousepad or the terminal on the desktop — or edit on the Mac, the files are the same |
+| Add / remove questions | The editor in the web interface — or VS Code on the Mac, the files are the same |
+| Check the bank before compiling | **Check** in the web interface (`amc-check`) |
+| Rebuild the PDFs | **Update documents** in the web interface, or AMC → *Documents* |
+| Read in scanned papers | Drop them on the web interface, then **Capture** |
+| Compute the marks, export a CSV | **Mark** and **Export** in the web interface |
+| **Fix a box AMC could not read** | **The desktop.** AMC → *Data capture* → the zoom dialog |
+| **Match a paper to a student** | **The desktop.** AMC's association dialog |
+| Change AMC settings | AMC → *Edit* → *Preferences* (the web interface reads them, never writes them) |
+| Create a project | AMC's project manager, or **Create project** in the web interface for a folder cloned from git |
 | Save the project | It is already saved: the repo is bind-mounted, not copied |
-| Pull / push to GitHub | **Save & Push to GitHub** on the desktop, or `git` in the terminal |
+| Pull / push to GitHub | **Sync** in the web interface, **Save & Push to GitHub** on the desktop, or `git` in a terminal |
 
 ---
 
@@ -62,12 +72,13 @@ docker compose up -d --build
 The first build pulls TeX Live and downloads roughly 2–3 GB; expect 10–20
 minutes. Later starts take a couple of seconds.
 
-**5. Open it.** <http://localhost:6080/> — password is whatever you set as
-`VNC_PASSWORD`. AMC opens by itself.
+**5. Open it.** <http://localhost:8080/> for the web interface. The desktop is
+at <http://localhost:6080/>, password `VNC_PASSWORD`, and the web interface's
+**Desktop ↗** button opens it for you.
 
-For a smoother session than the browser gives (marking hundreds of papers, for
-instance), macOS's built-in Screen Sharing talks to the same desktop:
-`open vnc://localhost:5901`.
+For a smoother desktop session than the browser gives (marking hundreds of
+papers, for instance), macOS's built-in Screen Sharing talks to the same
+desktop: `open vnc://localhost:5901`.
 
 ---
 
@@ -75,56 +86,68 @@ instance), macOS's built-in Screen Sharing talks to the same desktop:
 
 ### Opening an existing project from the repo
 
-AMC's project list shows the folders inside `EXAM_REPO/exam`. A project cloned
-from git will **not** appear at first: AMC identifies a project by its
-`options.xml`, which every one of these exam repos gitignores as generated
-output. Give it one from the desktop terminal:
+Both front doors list the folders inside `EXAM_REPO/exam`. A project cloned from
+git will show as **not set up**: AMC identifies a project by its `options.xml`,
+which every one of these exam repos gitignores as generated output. The web
+interface offers a **Create project** button for exactly this (pick `xelatex`
+for a Thai exam); from a terminal it is:
 
 ```bash
 amc-project-init /work/repo/exam/888102-mt
 ```
 
-Then reopen AMC's project list and pick `888102-mt`. Add `-e xelatex` for a Thai
-exam, `-t some-other-file.tex` if the source is not `groups.tex`.
-
 ### Editing questions
 
 The bank is plain LaTeX under `exam/questions/`, one file per chapter. Edit it
-wherever you prefer — the container and the Mac see the same files:
+wherever you prefer — all three views are the same files on disk:
 
-- in the container: AMC's own *Edit source file* button, Mousepad, or `vim`
-- on the Mac: VS Code, Claude Code, anything
+- the web interface's editor (`Ctrl`+`S` saves; it refuses to save over a file
+  that changed underneath it)
+- the desktop: AMC's own *Edit source file* button, Mousepad, or `vim`
+- the Mac: VS Code, Claude Code, anything
 
 Adding or removing questions changes a group's size, and `config.tex`'s
-`\DrawGroup{group}{N}` must never ask for more than the group holds. Check
-before compiling:
+`\DrawGroup{group}{N}` must never ask for more than the group holds. **Check**
+runs the exam repo's own three checkers (structure and draw counts,
+answer-tells, table widths) and is what catches this. `Ctrl`+`Enter` runs the
+checkers and then compiles only if they pass.
 
-```bash
-amc-check /work/repo/exam/888102-mt
-```
+### Compiling, capturing, marking
 
-That runs the exam repo's own three checkers (structure and draw counts,
-answer-tells, table widths). It reads them from the repo, so it stays correct as
-they change.
+In the web interface, top to bottom:
 
-### Compiling and marking
+1. **Update documents** → `DOC-sujet.pdf` and `DOC-corrige.pdf` appear in the
+   project folder, which is also a folder on the Mac. Download or print them.
+2. Scan the sat papers on the Mac, drop the PDF onto the web interface.
+3. **Capture** → AMC extracts one image per page and reads every box.
+4. **Mark** → scores, plus automatic association if the project has a student
+   list configured.
+5. **Export** → CSV, ODS or a PDF list, written to the project's `exports/`.
 
-Ordinary AMC, all of it inside the browser window:
+Everything lands in the mounted repo, so exports open in Numbers or Excel on the
+Mac without moving anything.
 
-1. *Documents* → **Update documents** → the DOC-\*.pdf files appear in the
-   project folder, which is also a folder on the Mac — print them with Preview.
-2. Scan the sat papers on the Mac, drop the PDF into the project's `scans/`.
-3. *Data capture* → **Automatic** → point it at those files.
-4. *Marking* → **Mark**, then *Reports* → export CSV/ODS.
+### The part that stays on the desktop
 
-Everything it writes lands in the mounted repo, so exports open in Numbers or
-Excel on the Mac without moving anything.
+After capture, the web interface shows a **Needs the desktop** panel when there
+is something only a person can settle:
+
+- **ambiguous boxes** — a box whose darkness sits too close to the threshold to
+  call. AMC's *Data capture* page lists pages by quality and its zoom dialog
+  fixes individual boxes.
+- **unmatched papers** — a student number the scanner smudged or the student
+  overwrote. AMC's association dialog shows the scanned name field next to the
+  student list.
+
+Both are "look at this image and decide", which is why they are not buttons
+here. Click **Desktop ↗**, fix them in AMC, and the web interface picks up the
+new state on its next refresh — it is the same project directory either way.
 
 ### Saving and syncing
 
 The working tree *is* the Mac's working tree — there is no separate copy to
-save. To commit and sync, either double-click **Save & Push to GitHub** on the
-desktop, or:
+save. **Sync** in the web interface commits, pulls and pushes; so does
+**Save & Push to GitHub** on the desktop, and so does:
 
 ```bash
 amc-save -m "add chapter 9 questions"
@@ -133,12 +156,34 @@ amc-save -n            # commit and pull, but do not push
 
 Push uses the SSH keys mounted from the Mac's `~/.ssh` (read-only, copied in and
 re-permissioned at startup, because SSH rejects keys that look world-readable).
-If a key has a passphrase, run `amc-save` from the terminal so you can type it.
+If a key has a passphrase, run `amc-save` from a terminal so you can type it.
 
 Note that `exam/.gitignore` deliberately excludes `data/`, `cr/`, `scans/`,
 `*.sqlite` and `options.xml`. Scans and the capture/scoring databases stay on
 the Mac mini and do not go to GitHub — that is intentional, they are large and
 contain student work.
+
+---
+
+## The command line, if you prefer it
+
+The web interface is a thin front end over these; they work the same from a
+terminal, on the desktop or through `docker compose exec amc`:
+
+| Command | Does |
+|---|---|
+| `amc-check <project>` | the exam repo's own pre-compile checkers |
+| `amc-compile <project>` | *Update documents*: compile, extract scoring, load the layout |
+| `amc-capture <project> [files…]` | extract page images and read the boxes |
+| `amc-mark <project>` | apply the scoring rules, then associate |
+| `amc-export -f csv <project>` | write the marks out |
+| `amc-status <project> --text` | where this project stands |
+| `amc-project-init <dir>` | give a cloned folder its `options.xml` |
+| `amc-save` | commit, pull, push |
+
+All of them read the project's own `options.xml` for the engine, source file,
+thresholds and mark scale — the same file AMC's *Preferences* dialog writes.
+Change a threshold in the GUI and the next `amc-mark` uses it.
 
 ---
 
@@ -158,8 +203,10 @@ scans. It takes about half a minute and prints a pass/fail line per check:
 
 ```
 Tool chain              auto-multiple-choice, pdflatex, xelatex, Xtigervnc,
-                        websockify, automultiplechoice.sty, pgfplots, tgtermes
-Desktop and remote      X on :1, XFCE running, noVNC on 6080, VNC on 5901
+                        websockify, the amc-* wrappers, the web interface's
+                        dependencies, automultiplechoice.sty, pgfplots, tgtermes
+Desktop and remote      X on :1, XFCE running, noVNC on 6080, VNC on 5901,
+                        the web interface answering on 8080
 Wiring                  repo mounted and writable, git works, projects visible,
                         AMC preferences seeded, GitHub SSH authentication
 Pipeline                AMC compiles a 2-copy exam, layout database builds,
@@ -181,26 +228,25 @@ The scripts and the Compose file can be checked without Docker:
 
 ```bash
 bash -n entrypoint.sh bin/*     # shell syntax
+python3 -m py_compile bin/amc-opts bin/amc-status web/app.py
 docker compose config           # resolves .env and validates the Compose file
 ```
 
 ### That the exam itself is still sound
 
-Different question, different tool — `amc-check` runs the exam repo's own
-checkers (structure and draw counts, answer-tells, table widths) and is what to
-run after editing questions, before compiling:
-
-```bash
-docker compose exec amc amc-check /work/repo/exam/888102-mt
-```
+Different question, different tool — **Check** in the web interface (or
+`amc-check`) runs the exam repo's own checkers and is what to run after editing
+questions, before compiling.
 
 ### End to end, by hand
 
 The self-test proves the machinery; only you can confirm the exam is right.
-Set `\NumCopies` to 2 in `config.tex`, press *Update documents*, and read
+Set `\NumCopies` to 2 in `config.tex`, press **Update documents**, and read
 `DOC-sujet.pdf` — then print one copy, fill it in, scan it, and run it through
-*Data capture* and *Marking*. That single round trip is what catches a
-misconfigured answer sheet before 250 students sit the paper.
+**Capture** and **Mark**. That single round trip is what catches a misconfigured
+answer sheet before 250 students sit the paper.
+
+---
 
 ## Configuration
 
@@ -211,16 +257,20 @@ The ones that matter most:
 |---|---|
 | `EXAM_REPO` | Absolute path to the exam repo on the Mac. Required. |
 | `AMC_PROJECTS_SUBDIR` | Folder inside it holding projects (`exam`, or `.`). |
-| `VNC_PASSWORD` | Password for both noVNC and Screen Sharing. Change it. |
+| `VNC_PASSWORD` | Password for the desktop and Screen Sharing. Change it. |
 | `VNC_GEOMETRY` | Desktop size, e.g. `1920x1200`. |
-| `BIND_ADDR` | `127.0.0.1` (default) keeps it on the Mac mini only. |
+| `BIND_ADDR` | `127.0.0.1` (default) keeps everything on the Mac mini only. |
+| `WEB_PORT` | Web interface port, default `8080`. |
+| `AMC_WEB` | `0` to run the desktop alone, without the web interface. |
+| `AMC_WEB_TOKEN` | Shared secret for the web interface. See below. |
 | `AMC_LATEX_ENGINE` | Default engine for new projects: `pdflatex` or `xelatex`. |
 | `AMC_AUTOSTART` | `0` to get a bare desktop instead of AMC on launch. |
 
 AMC's own preferences (window sizes, viewers, thresholds) live in the
 `amc-home` named volume and survive `docker compose up --build`. They are seeded
 once at first start and never overwritten afterwards, so anything changed in
-*Preferences* sticks.
+*Preferences* sticks — and the web interface reads those settings rather than
+keeping its own.
 
 To work on a different course, point `EXAM_REPO` at that repo and restart:
 `docker compose up -d`.
@@ -229,14 +279,19 @@ To work on a different course, point `EXAM_REPO` at that repo and restart:
 
 ## Reaching it from off the Mac mini
 
-The defaults bind to `127.0.0.1`, so the desktop is reachable only from the Mac
-mini itself. VNC is unencrypted and noVNC here is plain HTTP, so do not simply
-set `BIND_ADDR=0.0.0.0` and forward a port. Either:
+The defaults bind to `127.0.0.1`, so both front doors are reachable only from
+the Mac mini itself. Keep it that way and tunnel in:
 
 - **Tailscale** — install on the Mac mini and on your laptop, then browse to
-  `http://<mac-mini-tailscale-name>:6080/`. Simplest, and encrypted.
-- **Cloudflare Tunnel** — put `cloudflared` in front of port 6080 with Access
-  in front of it, if you want a real hostname.
+  `http://<mac-mini-tailscale-name>:8080/`. Simplest, and encrypted.
+- **Cloudflare Tunnel** — put `cloudflared` in front of the ports with Access in
+  front of it, if you want a real hostname.
+
+Do not simply set `BIND_ADDR=0.0.0.0` and forward a port. VNC is unencrypted and
+noVNC here is plain HTTP; and **the web interface runs commands and writes to
+the exam repo**, so anyone who can reach port 8080 can do both. If you do expose
+it beyond localhost, set `AMC_WEB_TOKEN` to a long random string — the page asks
+for it once and keeps it — and put TLS in front.
 
 ---
 
@@ -251,12 +306,24 @@ startup. See `fonts/README.md`.
 
 ## Troubleshooting
 
-**Browser shows "Failed to connect to server".** The desktop is still starting,
-or Xvnc died. `docker compose logs -f amc` — the entrypoint prints each step.
+**Web interface shows nothing / cannot connect.** `docker compose logs -f amc` —
+the entrypoint prints each service as it starts. `AMC_WEB=0` in `.env` turns it
+off entirely, which is the first thing to check.
+
+**Browser shows "Failed to connect to server" on 6080.** The desktop is still
+starting, or Xvnc died. Same log.
 
 **Blank grey desktop, no AMC.** XFCE started but AMC did not. Open a terminal
 from the desktop right-click menu and run `auto-multiple-choice` to see the
 error.
+
+**A button in the web interface fails.** The console at the bottom holds the
+command that ran and everything it printed — the same output you would have got
+in a terminal. LaTeX errors in particular are quoted in full.
+
+**"is already running" when starting a job.** One job at a time per project, on
+purpose: AMC's SQLite databases do not tolerate two writers. Wait, or press
+**Stop**.
 
 **`dubious ownership` from git.** Should not happen (the entrypoint sets
 `safe.directory '*'`), but if it does, the repo mount failed — check `EXAM_REPO`.
@@ -275,16 +342,23 @@ lists pages by capture quality, and the zoom dialog fixes individual boxes.
 
 ---
 
-## Why not a custom web UI
+## Why the split, and not one or the other
 
-The first plan for this was a web application wrapping AMC's command-line tools
-— project creation, a compile button, a scoring view, a settings form, a
-question editor. That is a lot of surface area rebuilt worse: AMC's marking
-workflow in particular (zooming into a doubtful box, correcting an association,
-re-running the mark) is genuinely interactive and would have needed most of the
-GUI recreated in the browser to be usable.
+The first plan for this was noVNC alone: ship the real GUI, get every feature
+immediately, stay correct when AMC updates. That reasoning still holds for the
+half of AMC that is genuinely interactive. Marking in particular — zooming into a
+doubtful box, correcting an association, re-running the mark — would need most of
+the GUI recreated in the browser to be usable, and a worse copy of it costs real
+time when there are 250 papers to get through.
 
-Shipping the actual GUI over noVNC gets all of it, immediately, and stays
-correct when AMC updates. The parts a browser form really would have helped with
-— editing questions, running the checkers, syncing git — are covered by the
-editor, `amc-check` and `amc-save` on the same desktop.
+But it was the wrong answer for the other half. Writing questions, running the
+checkers, compiling, exporting a CSV: none of that is spatial, none of it needs a
+window manager, and doing it through a remote framebuffer is strictly worse than
+a text box and a log pane — slower to type in, blurry, awkward from a laptop.
+
+So the web interface covers the batch steps and nothing else. It has no settings
+of its own, stores no state, and reimplements no AMC logic: every button shells
+out to the same `amc-*` scripts documented above, which read the project's
+`options.xml` for their parameters. When it reaches something that needs a human
+eye on an image, it says so and hands over. That is why it cannot drift from
+AMC — there is nothing in it to drift.

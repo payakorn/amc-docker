@@ -1,0 +1,116 @@
+#!/usr/bin/env python3
+"""Read a project's settings out of its options.xml.
+
+Every wrapper around AMC's command line needs the same handful of values —
+which LaTeX engine, which source file, where the data directory is, what the
+marking thresholds are. Those already live in options.xml, which is the file
+AMC's own GUI reads and writes. Reading them from there rather than hardcoding
+them is what keeps the web layer and the desktop in agreement: change a
+threshold in AMC's Preferences and the next `amc-mark` picks it up.
+
+Usage:
+  amc-opts <project-dir>          all keys, as shell assignments to eval
+  amc-opts <project-dir> <key>    one value, raw, on stdout
+
+Example:
+  eval "$(amc-opts /work/repo/exam/888102-mt)"
+  echo "$AMC_texsrc $AMC_moteur_latex_b"
+"""
+
+import os
+import shlex
+import sys
+import xml.etree.ElementTree as ET
+
+# key -> default when the tag is missing or empty. These mirror the defaults
+# amc-project-init writes, so a project made by AMC itself and one made by the
+# script behave identically.
+DEFAULTS = {
+    "texsrc": "groups.tex",
+    "moteur_latex_b": "pdflatex",
+    "data": "data",
+    "cr": "cr",
+    "doc_question": "DOC-sujet.pdf",
+    "doc_solution": "DOC-corrige.pdf",
+    "doc_setting": "DOC-calage.xy",
+    "doc_catalog": "DOC-catalog.pdf",
+    "nombre_copies": "0",
+    "seuil": "0.5",
+    "seuil_up": "1",
+    "note_grain": "0.5",
+    "note_arrondi": "inf",
+    "note_max": "20",
+    "note_min": "",
+    "note_max_plafond": "1",
+    "listeetudiants": "",
+    "liste_key": "",
+    "assoc_code": "",
+    "encodage_liste": "UTF-8",
+    "format_export": "ods",
+    "export_csv_columns": "student.copy,student.key,student.name",
+    "export_ods_columns": "student.copy,student.key,student.name",
+    "export_csv_separateur": ";",
+    "export_sort": "n",
+    "export_include_abs": "",
+}
+
+
+def load(project_dir):
+    path = os.path.join(project_dir, "options.xml")
+    if not os.path.isfile(path):
+        sys.exit(
+            f"{path} not found — this folder is not an AMC project yet.\n"
+            f"Create it with: amc-project-init {project_dir}"
+        )
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError as e:
+        sys.exit(f"{path} is not valid XML: {e}")
+
+    opts = dict(DEFAULTS)
+    for key in DEFAULTS:
+        node = root.find(key)
+        if node is not None and node.text and node.text.strip():
+            opts[key] = node.text.strip()
+
+    # AMC stores the source path as "%PROJET/groups.tex" — the %PROJET prefix is
+    # its placeholder for the project directory. Everything downstream wants a
+    # plain relative filename.
+    opts["texsrc"] = opts["texsrc"].replace("%PROJET/", "").replace("%PROJET", "")
+
+    # AMC-note wants i/n/s; options.xml stores the long form AMC's GUI writes.
+    # Both start with the right letter, so the first character is the mapping.
+    opts["note_arrondi_flag"] = (opts["note_arrondi"] or "i")[0].lower()
+
+    # The student list is stored relative to the project (or absolute). Resolve
+    # it once here so callers do not each have to.
+    if opts["listeetudiants"]:
+        opts["listeetudiants"] = os.path.join(project_dir, opts["listeetudiants"]) \
+            if not os.path.isabs(opts["listeetudiants"]) else opts["listeetudiants"]
+
+    return opts
+
+
+def main():
+    if len(sys.argv) not in (2, 3):
+        sys.exit(__doc__.strip())
+
+    project_dir = sys.argv[1].rstrip("/")
+    if not os.path.isdir(project_dir):
+        sys.exit(f"no such directory: {project_dir}")
+
+    opts = load(project_dir)
+
+    if len(sys.argv) == 3:
+        key = sys.argv[2]
+        if key not in opts:
+            sys.exit(f"unknown key: {key}\nknown: {', '.join(sorted(opts))}")
+        print(opts[key])
+        return
+
+    for key, value in sorted(opts.items()):
+        print(f"AMC_{key}={shlex.quote(value)}")
+
+
+if __name__ == "__main__":
+    main()

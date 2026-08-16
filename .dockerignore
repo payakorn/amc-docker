@@ -3,3 +3,6 @@
 fonts/*
 !fonts/.gitkeep
 README.md
+__pycache__
+*.pyc
+web/.venv

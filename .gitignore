@@ -2,3 +2,6 @@
 fonts/*
 !fonts/.gitkeep
 !fonts/README.md
+__pycache__/
+*.pyc
+web/.venv/

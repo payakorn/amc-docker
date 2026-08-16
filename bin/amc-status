@@ -1,0 +1,270 @@
+#!/usr/bin/env python3
+"""Report where a project stands: compiled, captured, marked, associated.
+
+This is what lets the web interface know when to stop and hand you over to the
+desktop. The batch half of the workflow (compile, capture, mark, export) is
+fine to drive from a browser form; the moment a box is ambiguous or a student
+number is unreadable, someone has to look at the scanned image, and that is
+AMC's own dialogs.
+
+Usage:
+  amc-status <project-dir>            JSON, for the web interface
+  amc-status <project-dir> --text     a few lines, for a terminal
+
+A note on how this reads the project: AMC's SQLite schema is an internal
+detail, not a documented interface, and it does change between versions. So
+every query here is guarded — a table or column that is not there yields
+"unknown" for that number rather than an exception. If a field reads null,
+believe the GUI over this script.
+"""
+
+import json
+import os
+import sqlite3
+import sys
+
+# How far either side of the marking threshold a box's darkness has to be
+# before we stop calling it ambiguous. This is our own definition, not AMC's
+# internal one: it exists to answer "is it worth opening the zoom dialog?",
+# and AMC's data capture page remains the authority on which pages are bad.
+AMBIGUOUS_BAND = 0.15
+
+
+def connect(path):
+    if not os.path.isfile(path):
+        return None
+    try:
+        # Read-only: marking may be running in the desktop at the same time and
+        # this must never be the thing that locks AMC's database.
+        return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=2)
+    except sqlite3.Error:
+        return None
+
+
+def tables(conn):
+    if conn is None:
+        return set()
+    try:
+        rows = conn.execute("select name from sqlite_master where type='table'")
+        return {r[0] for r in rows}
+    except sqlite3.Error:
+        return set()
+
+
+def columns(conn, table):
+    try:
+        return {r[1] for r in conn.execute(f"pragma table_info({table})")}
+    except sqlite3.Error:
+        return set()
+
+
+def scalar(conn, sql, params=()):
+    """Run a query that returns one number, or None if it cannot be run."""
+    if conn is None:
+        return None
+    try:
+        row = conn.execute(sql, params).fetchone()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
+
+def project_status(project):
+    opts_engine = None
+    source = None
+    options = os.path.join(project, "options.xml")
+    is_project = os.path.isfile(options)
+
+    if is_project:
+        import xml.etree.ElementTree as ET
+        try:
+            root = ET.parse(options).getroot()
+
+            def text(tag, default=""):
+                node = root.find(tag)
+                return node.text.strip() if node is not None and node.text else default
+
+            opts_engine = text("moteur_latex_b", "pdflatex")
+            source = text("texsrc", "groups.tex").replace("%PROJET/", "")
+            data_dir = text("data", "data")
+            seuil = float(text("seuil", "0.5") or 0.5)
+        except (ET.ParseError, ValueError):
+            data_dir, seuil = "data", 0.5
+    else:
+        data_dir, seuil = "data", 0.5
+
+    data = os.path.join(project, data_dir)
+
+    status = {
+        "name": os.path.basename(project),
+        "path": project,
+        "is_project": is_project,
+        "engine": opts_engine,
+        "source": source,
+        "documents": {},
+        "capture": {},
+        "marking": {},
+        "association": {},
+        "needs_desktop": [],
+    }
+
+    # --- documents ----------------------------------------------------------
+    subject = None
+    for candidate in ("DOC-sujet.pdf", "DOC-subject.pdf"):
+        p = os.path.join(project, candidate)
+        if os.path.isfile(p):
+            subject = candidate
+            status["documents"] = {
+                "subject": candidate,
+                "size": os.path.getsize(p),
+                "built_at": int(os.path.getmtime(p)),
+            }
+            break
+    status["documents"]["compiled"] = subject is not None
+
+    layout = connect(os.path.join(data, "layout.sqlite"))
+    if layout and "layout_page" in tables(layout):
+        status["documents"]["layout_pages"] = scalar(layout, "select count(*) from layout_page")
+        status["documents"]["layout_boxes"] = scalar(layout, "select count(*) from layout_box")
+
+    # Source edited after the last build: the PDFs on disk are stale.
+    if subject and source:
+        src_path = os.path.join(project, source)
+        if os.path.isfile(src_path):
+            status["documents"]["stale"] = (
+                os.path.getmtime(src_path) > os.path.getmtime(os.path.join(project, subject))
+            )
+
+    # --- capture ------------------------------------------------------------
+    capture = connect(os.path.join(data, "capture.sqlite"))
+    cap_tables = tables(capture)
+    if "capture_page" in cap_tables:
+        status["capture"]["pages"] = scalar(capture, "select count(*) from capture_page")
+        status["capture"]["copies"] = scalar(
+            capture, "select count(distinct student || '/' || copy) from capture_page"
+        )
+
+    if "capture_zone" in cap_tables:
+        cols = columns(capture, "capture_zone")
+        if {"total", "black"} <= cols:
+            lo, hi = max(0.0, seuil - AMBIGUOUS_BAND), min(1.0, seuil + AMBIGUOUS_BAND)
+            # total > 0 guards against dividing by a zone that was never measured.
+            ambiguous = scalar(
+                capture,
+                "select count(*) from capture_zone "
+                "where total > 0 and (cast(black as float) / total) between ? and ?",
+                (lo, hi),
+            )
+            status["capture"]["ambiguous_boxes"] = ambiguous
+            status["capture"]["ambiguous_band"] = [round(lo, 3), round(hi, 3)]
+        if "manual" in cols:
+            status["capture"]["manually_fixed"] = scalar(
+                capture, "select count(*) from capture_zone where manual >= 0"
+            )
+
+    # --- marking ------------------------------------------------------------
+    scoring = connect(os.path.join(data, "scoring.sqlite"))
+    sc_tables = tables(scoring)
+    for table in ("scoring_mark", "scoring_score"):
+        if table in sc_tables:
+            status["marking"]["marks"] = scalar(scoring, f"select count(*) from {table}")
+            break
+    if "scoring_mark" in sc_tables and "mark" in columns(scoring, "scoring_mark"):
+        status["marking"]["mean"] = scalar(scoring, "select round(avg(mark), 2) from scoring_mark")
+        status["marking"]["min"] = scalar(scoring, "select min(mark) from scoring_mark")
+        status["marking"]["max"] = scalar(scoring, "select max(mark) from scoring_mark")
+
+    # --- association --------------------------------------------------------
+    assoc = connect(os.path.join(data, "association.sqlite"))
+    if "association_association" in tables(assoc):
+        cols = columns(assoc, "association_association")
+        status["association"]["rows"] = scalar(assoc, "select count(*) from association_association")
+        if {"manual", "auto"} <= cols:
+            status["association"]["unassociated"] = scalar(
+                assoc,
+                "select count(*) from association_association "
+                "where (manual is null or manual = '') and (auto is null or auto = '')",
+            )
+
+    # --- what still needs a human at the desktop ----------------------------
+    ambiguous = status["capture"].get("ambiguous_boxes")
+    if ambiguous:
+        status["needs_desktop"].append(
+            f"{ambiguous} box(es) are too close to the threshold to call — "
+            "check them in AMC's data capture page"
+        )
+    unassoc = status["association"].get("unassociated")
+    if unassoc:
+        status["needs_desktop"].append(
+            f"{unassoc} paper(s) are not matched to a student — "
+            "use AMC's association dialog"
+        )
+
+    # Close everything we opened.
+    for conn in (layout, capture, scoring, assoc):
+        if conn:
+            conn.close()
+
+    return status
+
+
+def as_text(s):
+    out = []
+    out.append(f"project    {s['name']}" + ("" if s["is_project"] else "  (no options.xml)"))
+
+    doc = s["documents"]
+    if doc.get("compiled"):
+        bits = [doc["subject"]]
+        if doc.get("layout_pages"):
+            bits.append(f"{doc['layout_pages']} pages laid out")
+        if doc.get("stale"):
+            bits.append("SOURCE IS NEWER — recompile")
+        out.append("documents  " + ", ".join(bits))
+    else:
+        out.append("documents  not compiled yet")
+
+    cap = s["capture"]
+    if cap.get("pages"):
+        line = f"capture    {cap['pages']} page(s), {cap.get('copies', '?')} copy(ies)"
+        if cap.get("ambiguous_boxes"):
+            line += f", {cap['ambiguous_boxes']} ambiguous box(es)"
+        out.append(line)
+    else:
+        out.append("capture    nothing captured yet")
+
+    mark = s["marking"]
+    if mark.get("marks"):
+        line = f"marking    {mark['marks']} mark(s)"
+        if mark.get("mean") is not None:
+            line += f", mean {mark['mean']} (min {mark['min']}, max {mark['max']})"
+        out.append(line)
+    else:
+        out.append("marking    not marked yet")
+
+    if s["association"].get("rows") is not None:
+        unassoc = s["association"].get("unassociated")
+        out.append(
+            "assoc      "
+            + (f"{unassoc} paper(s) still unmatched" if unassoc else "all papers matched")
+        )
+
+    for item in s["needs_desktop"]:
+        out.append(f"  -> {item}")
+
+    return "\n".join(out)
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    text = "--text" in sys.argv[1:]
+
+    project = (args[0] if args else os.getcwd()).rstrip("/")
+    if not os.path.isdir(project):
+        sys.exit(f"no such directory: {project}")
+
+    status = project_status(project)
+    print(as_text(status) if text else json.dumps(status, indent=2))
+
+
+if __name__ == "__main__":
+    main()

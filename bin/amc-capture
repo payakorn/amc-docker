@@ -1,0 +1,125 @@
+#!/bin/bash
+# Read scanned answer sheets into the project — AMC's "Automatic data capture".
+#
+# Two steps, same as the GUI:
+#
+#   getimages   turn each scanned PDF into one bitmap per page (AMC works on
+#               page images, not on PDFs)
+#   analyse     find the corner marks on every page, work out which copy and
+#               page it is, and measure how dark each box is
+#
+# Usage:
+#   amc-capture <project-dir>              capture everything in the project's scans/
+#   amc-capture <project-dir> file.pdf...  capture these files, copying them into scans/
+#   amc-capture -m <project-dir> ...       photocopied subjects (allocate copy numbers)
+#
+# What this does NOT do is resolve the ambiguous boxes it finds. A box that is
+# half-filled, or a student number the scanner smudged, needs a human looking at
+# the image — that is AMC's zoom dialog on the desktop at :6080, and there is no
+# honest way to do it from a command line. Run `amc-status` afterwards to see
+# whether any pages need that attention.
+
+set -uo pipefail
+
+multiple=0
+while getopts ":mh" opt; do
+  case "$opt" in
+    m) multiple=1 ;;
+    h) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+project=${1:-}
+[ -n "$project" ] || { echo "usage: amc-capture [-m] <project-dir> [scan-files...]" >&2; exit 2; }
+project=${project%/}
+[ -d "$project" ] || { echo "no such directory: $project" >&2; exit 1; }
+shift
+
+eval "$(amc-opts "$project")" || exit 1
+
+cd "$project" || exit 1
+
+[ -f "$AMC_data/layout.sqlite" ] || {
+  echo "no page layout in $AMC_data — run amc-compile first" >&2
+  echo "capture matches scans against the layout built by 'Update documents'" >&2
+  exit 1
+}
+
+# scans/       the papers as they came off the scanner — the originals
+# scans/pages/ one image per page, extracted from them by getimages
+#
+# Keeping those apart matters more than it looks. getimages drops the page
+# images it makes right next to their source file *unless* it is given
+# --copy-to, so without this the second capture of a project would find its
+# own output from the first one sitting in scans/ and read every page twice.
+pages_dir=scans/pages
+mkdir -p scans "$pages_dir" "$AMC_cr/corrections/jpg" "$AMC_cr/diagnostic" "$AMC_cr/zooms"
+
+inputs=()
+if [ "$#" -gt 0 ]; then
+  # Files given on the command line live somewhere else. Copy them into the
+  # project first: a scan is student work, and the project should hold its own
+  # copy rather than depend on wherever it happened to be uploaded to.
+  for f in "$@"; do
+    if [ ! -f "$f" ]; then echo "skipping missing file: $f" >&2; continue; fi
+    dest=scans/$(basename "$f")
+    n=1
+    while [ -e "$dest" ]; do
+      dest=scans/$(basename "${f%.*}")-$n.${f##*.}
+      n=$((n + 1))
+    done
+    cp -- "$f" "$dest"
+    inputs+=("$dest")
+  done
+else
+  # -maxdepth 1 keeps scans/pages/ out of this.
+  while IFS= read -r f; do inputs+=("$f"); done < <(
+    find scans -maxdepth 1 -type f \
+      \( -iname '*.pdf' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.tif' -o -iname '*.tiff' \) \
+      | sort
+  )
+fi
+
+[ "${#inputs[@]}" -gt 0 ] || {
+  echo "no scans to capture — put the scanned PDFs in $project/scans/ or pass them as arguments" >&2
+  exit 1
+}
+
+echo "== ${#inputs[@]} file(s) to read"
+
+# getimages both reads and rewrites this list: it goes in holding the scanned
+# files and comes out holding one line per extracted page image, which is
+# exactly what analyse wants next.
+list=$(mktemp)
+trap 'rm -f "$list"' EXIT
+printf '%s\n' "${inputs[@]}" > "$list"
+
+getimages_args=(--vector-density 300 --copy-to "$pages_dir" --list "$list")
+
+echo "== extracting page images"
+if ! timeout 1800 auto-multiple-choice getimages "${getimages_args[@]}" </dev/null; then
+  echo "!! getimages failed" >&2
+  echo "   'operation not allowed by the security policy' means ImageMagick's PDF" >&2
+  echo "   policy is still in place — rebuild with: docker compose build --no-cache" >&2
+  exit 1
+fi
+
+pages=$(grep -c . "$list" 2>/dev/null || echo 0)
+echo "   $pages page image(s)"
+
+# --liste-fichiers, not --list-fichiers: AMC's option names are half French and
+# this one keeps the French spelling. (The Debian manpage prints it the other
+# way round; AMC-analyse.pl is what actually parses it.)
+analyse_args=(--projet . --data "$AMC_data" --cr "$AMC_cr" --liste-fichiers "$list")
+[ "$multiple" = 1 ] && analyse_args+=(--multiple)
+
+echo "== analysing pages"
+if ! timeout 3600 auto-multiple-choice analyse "${analyse_args[@]}" </dev/null; then
+  echo "!! analyse failed" >&2
+  exit 1
+fi
+
+echo
+amc-status "$project" --text 2>/dev/null || echo "captured $pages page(s)"

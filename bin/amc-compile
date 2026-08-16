@@ -1,0 +1,94 @@
+#!/bin/bash
+# Build a project's documents — what AMC's "Update documents" button does.
+#
+# Three steps, in the order the GUI runs them:
+#
+#   prepare --mode s   compile the LaTeX into the subject PDF, the corrected
+#                      copy, and the positions file (where every box landed)
+#   prepare --mode b   extract the scoring rules from the same source
+#   meptex             load the positions file into the layout database, which
+#                      is what data capture later matches scans against
+#
+# Skipping meptex is the classic way to get a project that prints fine and then
+# fails every scan, so it is not optional here.
+#
+# Usage:
+#   amc-compile [-n COPIES] [-q] <project-dir>
+#
+#   -n  number of copies to generate, overriding the source's \NumCopies
+#   -q  quiet: only report the outcome, not each step
+#
+# Settings (engine, source file, output names) come from the project's
+# options.xml, so this and the GUI always agree. See amc-opts.
+
+set -uo pipefail
+
+copies=""
+quiet=0
+
+while getopts ":n:qh" opt; do
+  case "$opt" in
+    n) copies=$OPTARG ;;
+    q) quiet=1 ;;
+    h) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+project=${1:-$PWD}
+project=${project%/}
+[ -d "$project" ] || { echo "no such directory: $project" >&2; exit 1; }
+
+eval "$(amc-opts "$project")" || exit 1
+
+cd "$project" || exit 1
+
+[ -f "$AMC_texsrc" ] || {
+  echo "source file not found: $project/$AMC_texsrc" >&2
+  echo "options.xml points at it; fix <texsrc> or pass the right file to amc-project-init -t" >&2
+  exit 1
+}
+
+say() { [ "$quiet" = 1 ] || printf '== %s\n' "$*"; }
+
+mkdir -p "$AMC_data" "$AMC_cr/corrections/jpg" "$AMC_cr/corrections/pdf" \
+         "$AMC_cr/diagnostic" "$AMC_cr/zooms" scans exports
+
+# \NumCopies in the source normally decides this; options.xml's value is only
+# used when it is non-zero, and -n beats both.
+n_copies=$copies
+[ -n "$n_copies" ] || { [ "$AMC_nombre_copies" != "0" ] && n_copies=$AMC_nombre_copies; }
+
+prepare_args=(--mode s --with "$AMC_moteur_latex_b"
+              --data "$AMC_data"
+              --out-sujet "$AMC_doc_question"
+              --out-corrige "$AMC_doc_solution"
+              --out-calage "$AMC_doc_setting")
+[ -n "$n_copies" ] && prepare_args+=(--n-copies "$n_copies")
+
+# </dev/null everywhere: a LaTeX error otherwise parks pdflatex at its
+# interactive "?" prompt and the job hangs forever instead of failing.
+say "compiling with $AMC_moteur_latex_b${n_copies:+ ($n_copies copies)}"
+if ! timeout 900 auto-multiple-choice prepare "${prepare_args[@]}" "$AMC_texsrc" </dev/null; then
+  echo "!! LaTeX compilation failed — read the log above for the first error" >&2
+  exit 1
+fi
+
+[ -s "$AMC_doc_question" ] || { echo "!! $AMC_doc_question was not produced" >&2; exit 1; }
+
+say "extracting scoring rules"
+if ! timeout 300 auto-multiple-choice prepare --mode b --data "$AMC_data" "$AMC_texsrc" </dev/null; then
+  echo "!! could not extract scoring data — marking will not work until this passes" >&2
+  exit 1
+fi
+
+say "loading the page layout"
+if ! timeout 300 auto-multiple-choice meptex --src "$AMC_doc_setting" --data "$AMC_data" </dev/null; then
+  echo "!! meptex failed — data capture would not be able to match any scan" >&2
+  exit 1
+fi
+
+pages=$(pdfinfo "$AMC_doc_question" 2>/dev/null | awk '/^Pages:/{print $2}')
+echo
+echo "built $AMC_doc_question (${pages:-?} pages) and $AMC_doc_solution in $project"

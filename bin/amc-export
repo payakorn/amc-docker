@@ -1,0 +1,79 @@
+#!/bin/bash
+# Write the marks out as a spreadsheet — AMC's "Reports" → export.
+#
+# Usage:
+#   amc-export [-f csv|ods|list] [-o OUTFILE] <project-dir>
+#
+#   -f  format; defaults to the project's own setting (options.xml format_export)
+#   -o  output path; defaults to exports/<project>-<date>.<ext>
+#
+# The file lands in the project's exports/ folder, which is inside the mounted
+# repo — so it opens in Numbers or Excel on the host with nothing to copy.
+#
+# Which columns appear is the project's setting too (export_csv_columns /
+# export_ods_columns), so it matches what the GUI would produce.
+
+set -uo pipefail
+
+format=""
+outfile=""
+
+while getopts ":f:o:h" opt; do
+  case "$opt" in
+    f) format=$OPTARG ;;
+    o) outfile=$OPTARG ;;
+    h) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+project=${1:-$PWD}
+project=${project%/}
+[ -d "$project" ] || { echo "no such directory: $project" >&2; exit 1; }
+
+eval "$(amc-opts "$project")" || exit 1
+
+name=$(basename "$project")
+cd "$project" || exit 1
+
+[ -f "$AMC_data/scoring.sqlite" ] || {
+  echo "no marks in $project yet — run amc-mark first" >&2
+  exit 1
+}
+
+[ -n "$format" ] || format=$AMC_format_export
+
+# AMC's module names are case-sensitive: CSV, ods, List.
+case "${format,,}" in
+  csv)  module=CSV;  ext=csv;  columns=$AMC_export_csv_columns ;;
+  ods)  module=ods;  ext=ods;  columns=$AMC_export_ods_columns ;;
+  list) module=List; ext=pdf;  columns="" ;;
+  *) echo "unsupported format: $format (use csv, ods or list)" >&2; exit 2 ;;
+esac
+
+mkdir -p exports
+[ -n "$outfile" ] || outfile="exports/${name}-$(date +%Y%m%d-%H%M).${ext}"
+
+args=(--data "$AMC_data" --module "$module" --o "$outfile" --sort "$AMC_export_sort")
+[ -n "$columns" ] && args+=(--option-out "columns=$columns")
+[ "$module" = CSV ] && args+=(--option-out "separateur=$AMC_export_csv_separateur")
+
+# Without a student list AMC exports the papers it captured, identified by copy
+# number; --fich-noms is what puts real names in the output.
+if [ -n "$AMC_listeetudiants" ] && [ -f "$AMC_listeetudiants" ]; then
+  args+=(--fich-noms "$AMC_listeetudiants" --noms-encodage "$AMC_encodage_liste")
+  # 1 = include students who have no scanned sheet (absentees) in the output.
+  [ -n "$AMC_export_include_abs" ] && args+=(--useall 1) || args+=(--useall 0)
+fi
+
+echo "== exporting $module"
+if ! timeout 600 auto-multiple-choice export "${args[@]}" </dev/null; then
+  echo "!! export failed" >&2
+  exit 1
+fi
+
+[ -s "$outfile" ] || { echo "!! export produced no file" >&2; exit 1; }
+
+echo
+echo "wrote $project/$outfile"

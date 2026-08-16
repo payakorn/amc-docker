@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>AMC — exam workbench</title>
+<style>
+  :root {
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --primary-soft: #eef2ff;
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+    --bg: #f1f5f9;
+    --surface: #ffffff;
+    --surface-2: #f8fafc;
+    --surface-3: #f1f5f9;
+    --border: #e2e8f0;
+    --border-strong: #cbd5e1;
+    --text-main: #334155;
+    --text-strong: #0f172a;
+    --text-muted: #64748b;
+    --radius: 8px;
+    --pad: 10px;
+    --topbar-h: 48px;
+    --font: "Inter", "IBM Plex Sans Thai", -apple-system, "Segoe UI", Roboto, "Noto Sans Thai", sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font); font-size: 13.5px; color: var(--text-main);
+    background: var(--bg); overflow: hidden;
+  }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  * { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+
+  #app { display: grid; height: 100dvh; grid-template-rows: var(--topbar-h) 1fr auto; }
+
+  /* ---------- topbar ---------- */
+  header {
+    display: flex; align-items: center; gap: 10px; min-width: 0;
+    padding: 0 var(--pad); background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  header h1 {
+    font-size: 15px; font-weight: 700; color: var(--text-strong);
+    margin: 0; white-space: nowrap;
+  }
+  header h1 span { color: var(--text-muted); font-weight: 500; }
+  select, input[type=text], input[type=number] {
+    font: inherit; font-size: 12.5px; padding: 4px 8px; color: var(--text-main);
+    border: 1px solid var(--border-strong); border-radius: var(--radius);
+    background: var(--surface); max-width: 240px;
+  }
+  .chips { display: flex; gap: 6px; min-width: 0; overflow-x: auto; flex: 1; }
+  .chip {
+    flex: 0 0 auto; display: inline-flex; align-items: baseline; gap: 5px;
+    padding: 3px 9px; border-radius: 999px; background: var(--surface-2);
+    border: 1px solid var(--border); font-size: 12px; color: var(--text-muted);
+    cursor: default; white-space: nowrap;
+  }
+  .chip b { color: var(--text-strong); font-size: 12.5px; }
+  .chip.ok b { color: var(--success); }
+  .chip.warn { border-color: #fed7aa; background: #fff7ed; }
+  .chip.warn b { color: var(--warning); }
+  .chip.bad { border-color: #fecaca; background: #fef2f2; }
+  .chip.bad b { color: var(--danger); }
+
+  button {
+    font: inherit; font-weight: 600; font-size: 12.5px; cursor: pointer;
+    border-radius: var(--radius); border: 1px solid var(--border-strong);
+    background: var(--surface); color: var(--text-main); padding: 5px 12px;
+    white-space: nowrap; transition: background 140ms ease, border-color 140ms ease;
+  }
+  button:hover:not(:disabled) { background: var(--surface-2); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+  button.primary:hover:not(:disabled) { background: var(--primary-hover); }
+  button.danger { color: var(--danger); border-color: #fecaca; }
+  button.ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
+  button.ghost:hover:not(:disabled) { background: var(--surface-2); }
+  button:focus-visible, select:focus-visible, textarea:focus-visible, input:focus-visible,
+  a:focus-visible, li:focus-visible {
+    outline: 2px solid var(--primary); outline-offset: 1px;
+  }
+
+  /* ---------- main: files | editor | pipeline ---------- */
+  main {
+    min-height: 0; padding: var(--pad); display: grid; gap: var(--pad);
+    grid-template-columns: 232px minmax(0, 1fr) 312px;
+    grid-template-areas: "files editor pipeline";
+  }
+  #files-panel { grid-area: files; }
+  #editor-panel { grid-area: editor; }
+  #pipeline-panel { grid-area: pipeline; }
+  .panel {
+    min-width: 0; min-height: 0; display: flex; flex-direction: column;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+  }
+  .panel > h2 {
+    margin: 0; padding: 6px var(--pad); font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 6px; justify-content: space-between;
+  }
+  .panel > .body { min-height: 0; overflow: auto; flex: 1; }
+  .panel > .body.pad { padding: var(--pad); }
+
+  /* file / project lists */
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li {
+    padding: 5px var(--pad); border-bottom: 1px solid var(--border);
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    font-size: 12.5px; min-width: 0;
+  }
+  ul.list li:hover { background: var(--surface-2); }
+  ul.list li.active { background: var(--primary-soft); color: var(--text-strong); font-weight: 600; }
+  ul.list li .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  ul.list li .meta { font-size: 10.5px; color: var(--text-muted); font-family: var(--mono); }
+  .group-label {
+    padding: 5px var(--pad) 3px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+    background: var(--surface-3); border-bottom: 1px solid var(--border);
+  }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--border-strong); }
+  .dot.ok { background: var(--success); }
+  .dot.warn { background: var(--warning); }
+  .dot.none { background: var(--border-strong); }
+
+  /* editor */
+  #editor {
+    flex: 1; min-height: 0; width: 100%; border: 0; resize: none; padding: 8px 10px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.6; color: var(--text-strong);
+    tab-size: 2; outline: none; background: var(--surface);
+  }
+  .editor-path { font-family: var(--mono); font-size: 11px; color: var(--text-muted); text-transform: none; letter-spacing: 0; }
+  .dirty-dot { color: var(--warning); font-weight: 700; }
+
+  /* pipeline */
+  .step { border-bottom: 1px solid var(--border); padding: 8px var(--pad); }
+  .step:last-child { border-bottom: 0; }
+  .step h3 {
+    margin: 0 0 6px; font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: .04em;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .step .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .step .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 5px; line-height: 1.45; }
+  .step input[type=number] { width: 92px; }
+
+  .handoff {
+    margin: 0; padding: 8px var(--pad); background: #fff7ed;
+    border-bottom: 1px solid #fed7aa; font-size: 12px; color: #7c2d12; line-height: 1.5;
+  }
+  .handoff ul { margin: 4px 0 6px; padding-left: 16px; }
+  .handoff a {
+    color: #7c2d12; font-weight: 700;
+  }
+
+  .files a { color: var(--primary); text-decoration: none; }
+  .files a:hover { text-decoration: underline; }
+
+  .dropzone {
+    border: 1px dashed var(--border-strong); border-radius: var(--radius);
+    padding: 10px; text-align: center; font-size: 11.5px; color: var(--text-muted);
+    cursor: pointer; transition: background 140ms ease, border-color 140ms ease;
+  }
+  .dropzone.over { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
+
+  .empty { padding: 14px var(--pad); color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+
+  /* ---------- docked console ---------- */
+  #console { border-top: 1px solid var(--border); background: var(--surface); }
+  #console .bar {
+    display: flex; align-items: center; gap: 8px; padding: 4px var(--pad);
+    font-size: 12px; color: var(--text-muted); user-select: none;
+  }
+  #console .bar .title { cursor: pointer; flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  #console .bar:hover { background: var(--surface-2); }
+  #console pre {
+    margin: 0; padding: 6px var(--pad); height: 172px; overflow-y: auto;
+    font-family: var(--mono); font-size: 11.5px; line-height: 1.55;
+    background: var(--surface-2); border-top: 1px solid var(--border);
+    white-space: pre-wrap; word-break: break-word; color: var(--text-strong);
+  }
+  #console.collapsed pre { display: none; }
+  .spinner {
+    width: 10px; height: 10px; border: 2px solid var(--border-strong);
+    border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .status-pill {
+    font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+    background: var(--surface-3); color: var(--text-muted);
+  }
+  .status-pill.run { background: var(--primary-soft); color: var(--primary); }
+  .status-pill.ok { background: #ecfdf5; color: var(--success); }
+  .status-pill.fail { background: #fef2f2; color: var(--danger); }
+
+  /* ---------- toast + help ---------- */
+  #toast {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: var(--text-strong); color: #fff; padding: 7px 14px; border-radius: var(--radius);
+    font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity 160ms ease; z-index: 40;
+    max-width: 70vw;
+  }
+  #toast.show { opacity: 1; }
+  #toast.err { background: var(--danger); }
+  dialog {
+    border: 1px solid var(--border); border-radius: var(--radius); padding: 0;
+    color: var(--text-main); font-family: var(--font); max-width: 460px;
+  }
+  dialog::backdrop { background: rgba(15, 23, 42, .35); }
+  dialog h2 { margin: 0; padding: 8px var(--pad); font-size: 12.5px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  dialog .body { padding: var(--pad); font-size: 12.5px; line-height: 1.6; }
+  dialog kbd {
+    font-family: var(--mono); font-size: 11px; background: var(--surface-3);
+    border: 1px solid var(--border-strong); border-bottom-width: 2px;
+    border-radius: 4px; padding: 0 4px;
+  }
+  dialog table { width: 100%; border-collapse: collapse; }
+  dialog td { padding: 3px 0; }
+
+  /* Narrow window: stack the pipeline under the editor rather than hiding it.
+     Driving the pipeline is the whole point of this page, so it is the last
+     thing that should disappear; the file list keeps its column because
+     picking a file is how you reach the editor at all. */
+  @media (max-width: 1100px) {
+    main {
+      grid-template-columns: 190px minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1.1fr) minmax(0, 1fr);
+      grid-template-areas: "files editor" "files pipeline";
+    }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>AMC <span id="repo-name">workbench</span></h1>
+    <select id="project-select" title="Project (AMC looks for these in the exam folder)"></select>
+    <div class="chips" id="chips"></div>
+    <button id="btn-sync" title="Commit, pull and push the exam repo">Sync</button>
+    <button id="btn-help" class="ghost" title="Keyboard shortcuts (?)">?</button>
+    <button id="btn-desktop" class="primary" title="Open the full AMC desktop in a new tab">Desktop ↗</button>
+  </header>
+
+  <main>
+    <section class="panel" id="files-panel">
+      <h2>Files</h2>
+      <div class="body" id="file-list"></div>
+    </section>
+
+    <section class="panel" id="editor-panel">
+      <h2>
+        <span class="editor-path" id="editor-path">no file open</span>
+        <span>
+          <button id="btn-revert" class="ghost" disabled>Revert</button>
+          <button id="btn-save" disabled>Save</button>
+        </span>
+      </h2>
+      <textarea id="editor" spellcheck="false" placeholder="Pick a file on the left to edit it.
+
+The question bank is shared: exam/questions/*.tex is the same file the desktop and your host editor see." disabled></textarea>
+    </section>
+
+    <section class="panel" id="pipeline-panel">
+      <h2>Pipeline</h2>
+      <div class="body" id="pipeline"></div>
+    </section>
+  </main>
+
+  <div id="console" class="collapsed">
+    <div class="bar">
+      <div class="title" id="console-toggle">
+        <span id="console-caret">▸</span>
+        <span id="console-label">Console</span>
+        <span class="status-pill" id="job-pill" hidden></span>
+        <span id="job-spinner" hidden><span class="spinner"></span></span>
+      </div>
+      <button id="btn-stop" class="danger" hidden>Stop</button>
+      <button id="btn-clear" class="ghost">Clear</button>
+    </div>
+    <pre id="log"></pre>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<dialog id="help">
+  <h2>Keyboard shortcuts</h2>
+  <div class="body">
+    <table>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>Save the open file</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Check, then compile</td></tr>
+      <tr><td><kbd>Ctrl</kbd>+<kbd>L</kbd></td><td>Show / hide the console</td></tr>
+      <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Close</td></tr>
+    </table>
+    <p style="color:var(--text-muted);margin:10px 0 0">
+      Reviewing ambiguous boxes and matching papers to students happens in the
+      AMC desktop — the <b>Desktop ↗</b> button opens it.
+    </p>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------ state */
+const state = {
+  config: null,
+  projects: [],
+  project: null,
+  status: null,
+  files: [],
+  openFile: null,      // { path, content, modified }
+  dirty: false,
+  job: null,           // { id, kind, offset }
+  polling: null,
+  token: localStorage.getItem("amcToken") || "",
+};
+
+const $ = (id) => document.getElementById(id);
+
+/* ------------------------------------------------------------------- api */
+async function api(path, options = {}) {
+  const opts = { ...options, headers: { ...(options.headers || {}) } };
+  if (state.token) opts.headers["x-amc-token"] = state.token;
+  if (opts.body && !(opts.body instanceof FormData)) {
+    opts.headers["content-type"] = "application/json";
+    opts.body = JSON.stringify(opts.body);
+  }
+  const res = await fetch(path, opts);
+  if (res.status === 401) {
+    const token = prompt("This AMC web interface needs its access token (AMC_WEB_TOKEN):");
+    if (token) {
+      state.token = token.trim();
+      localStorage.setItem("amcToken", state.token);
+      return api(path, options);
+    }
+    throw new Error("not authorised");
+  }
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try { detail = (await res.json()).detail || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  return res.headers.get("content-type")?.includes("json") ? res.json() : res;
+}
+
+function toast(message, isError = false) {
+  const el = $("toast");
+  el.textContent = message;
+  el.className = "show" + (isError ? " err" : "");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => { el.className = ""; }, isError ? 6000 : 2800);
+}
+
+const fmtSize = (n) =>
+  n > 1048576 ? (n / 1048576).toFixed(1) + " MB"
+  : n > 1024 ? Math.round(n / 1024) + " kB" : n + " B";
+
+const fmtTime = (epoch) => new Date(epoch * 1000).toLocaleString([], {
+  month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+});
+
+/* -------------------------------------------------------------- projects */
+async function loadProjects() {
+  const data = await api("/api/projects");
+  state.projects = data.projects;
+
+  const select = $("project-select");
+  select.innerHTML = state.projects
+    .map((p) => `<option value="${p.name}">${p.name}${p.is_project ? "" : "  (not set up)"}</option>`)
+    .join("");
+
+  if (!state.project || !state.projects.some((p) => p.name === state.project)) {
+    // Prefer a project that is actually set up: landing on a folder that still
+    // needs options.xml makes the whole panel look like an error on first open.
+    const ready = state.projects.find((p) => p.is_project);
+    state.project = (ready || state.projects[0])?.name ?? null;
+  }
+  if (state.project) select.value = state.project;
+  await selectProject(state.project);
+}
+
+async function selectProject(name) {
+  state.project = name;
+  if (!name) { render(); return; }
+  localStorage.setItem("amcProject", name);
+  await Promise.all([refreshStatus(), loadFiles()]);
+}
+
+async function refreshStatus() {
+  if (!state.project) return;
+  state.status = await api(`/api/projects/${state.project}/status`);
+  renderChips();
+  await renderPipeline();
+}
+
+async function loadFiles() {
+  if (!state.project) return;
+  const data = await api(`/api/projects/${state.project}/files`);
+  state.files = data.files;
+  renderFiles();
+}
+
+/* ---------------------------------------------------------------- render */
+function renderChips() {
+  const s = state.status;
+  if (!s) { $("chips").innerHTML = ""; return; }
+  const chips = [];
+
+  if (!s.is_project) {
+    chips.push(`<span class="chip bad"><b>not an AMC project</b></span>`);
+  } else {
+    const doc = s.documents || {};
+    if (doc.compiled) {
+      const stale = doc.stale;
+      chips.push(`<span class="chip ${stale ? "warn" : "ok"}" title="${
+        stale ? "The LaTeX source is newer than the built PDF — recompile" : "Built " + fmtTime(doc.built_at)}">
+        documents <b>${stale ? "stale" : "built"}</b></span>`);
+      if (doc.layout_pages) {
+        chips.push(`<span class="chip" title="Pages in the layout database, used to match scans">layout <b>${doc.layout_pages}</b></span>`);
+      }
+    } else {
+      chips.push(`<span class="chip"><b>not compiled</b></span>`);
+    }
+
+    const cap = s.capture || {};
+    if (cap.pages) {
+      chips.push(`<span class="chip ok" title="Scanned pages read into the project">captured <b>${cap.pages}</b> pages</span>`);
+      if (cap.ambiguous_boxes) {
+        chips.push(`<span class="chip warn" title="Boxes whose darkness falls within ${
+          cap.ambiguous_band?.join("–")} — too close to the threshold to call automatically">
+          ambiguous <b>${cap.ambiguous_boxes}</b></span>`);
+      }
+    }
+
+    const mark = s.marking || {};
+    if (mark.marks) {
+      chips.push(`<span class="chip ok" title="min ${mark.min} · max ${mark.max}">marks <b>${mark.marks}</b>${
+        mark.mean != null ? ` mean <b>${mark.mean}</b>` : ""}</span>`);
+    }
+
+    const assoc = s.association || {};
+    if (assoc.unassociated) {
+      chips.push(`<span class="chip warn" title="Papers whose student number could not be matched">unmatched <b>${assoc.unassociated}</b></span>`);
+    }
+  }
+  $("chips").innerHTML = chips.join("");
+}
+
+function renderFiles() {
+  const container = $("file-list");
+  if (!state.files.length) {
+    container.innerHTML = `<div class="empty">No .tex files found in this project.</div>`;
+    return;
+  }
+  const inProject = state.files.filter((f) => !f.path.includes("/questions/"));
+  const bank = state.files.filter((f) => f.path.includes("/questions/"));
+
+  const item = (f) => `<li tabindex="0" data-path="${f.path}" class="${
+    state.openFile?.path === f.path ? "active" : ""}" title="${f.path}">
+      <span class="name">${f.name}</span>
+      <span class="meta">${fmtSize(f.size)}</span>
+    </li>`;
+
+  container.innerHTML =
+    (inProject.length ? `<div class="group-label">Project</div><ul class="list">${inProject.map(item).join("")}</ul>` : "") +
+    (bank.length ? `<div class="group-label">Question bank</div><ul class="list">${bank.map(item).join("")}</ul>` : "");
+
+  container.querySelectorAll("li").forEach((li) => {
+    const open = () => openFile(li.dataset.path);
+    li.addEventListener("click", open);
+    li.addEventListener("keydown", (e) => { if (e.key === "Enter") open(); });
+  });
+}
+
+async function renderPipeline() {
+  const s = state.status;
+  const panel = $("pipeline");
+  if (!s) { panel.innerHTML = ""; return; }
+
+  if (!s.is_project) {
+    panel.innerHTML = `
+      <div class="step">
+        <h3>Set up this folder</h3>
+        <div class="hint">A project cloned from git has no <code>options.xml</code> — that file is
+        generated output and the exam repos gitignore it, so AMC does not list the folder yet.</div>
+        <div class="row" style="margin-top:8px">
+          <select id="init-engine">
+            <option value="pdflatex">pdflatex</option>
+            <option value="xelatex">xelatex (Thai)</option>
+          </select>
+          <input type="text" id="init-tex" value="groups.tex" style="width:110px" />
+          <button class="primary" id="btn-init">Create project</button>
+        </div>
+      </div>`;
+    $("btn-init").addEventListener("click", async () => {
+      try {
+        await api(`/api/projects/${state.project}/init`, {
+          method: "POST",
+          body: { engine: $("init-engine").value, texfile: $("init-tex").value },
+        });
+        toast("project created");
+        await refreshStatus();
+        await loadFiles();
+      } catch (e) { toast(e.message, true); }
+    });
+    return;
+  }
+
+  const artifacts = await api(`/api/projects/${state.project}/artifacts`);
+  const needs = s.needs_desktop || [];
+  const cap = s.capture || {};
+
+  const fileLink = (f) =>
+    `<div><a href="/api/download?path=${encodeURIComponent(f.path)}${
+      state.token ? "&token=" + encodeURIComponent(state.token) : ""}" download>${f.name}</a>
+     <span class="meta" style="color:var(--text-muted);font-size:10.5px"> ${fmtSize(f.size)} · ${fmtTime(f.modified)}</span></div>`;
+
+  panel.innerHTML = `
+    ${needs.length ? `<div class="handoff">
+      <b>Needs the desktop</b>
+      <ul>${needs.map((n) => `<li>${n}</li>`).join("")}</ul>
+      These need someone to look at the scanned image — that is AMC's own dialogs.
+      <a href="#" id="handoff-link">Open the desktop ↗</a>
+    </div>` : ""}
+
+    <div class="step">
+      <h3>1 · Questions</h3>
+      <div class="row">
+        <button id="btn-check">Check</button>
+      </div>
+      <div class="hint">Runs the exam repo's own checkers: draw counts against the bank,
+      answer-tells, table widths.</div>
+    </div>
+
+    <div class="step">
+      <h3>2 · Documents</h3>
+      <div class="row">
+        <button class="primary" id="btn-compile">Update documents</button>
+        <input type="number" id="copies" min="1" max="2000" placeholder="copies" title="Override \\NumCopies in the source" />
+      </div>
+      <div class="hint">Compiles with <code>${s.engine || "pdflatex"}</code>, extracts the scoring
+      rules and loads the page layout.</div>
+      <div class="files" style="margin-top:7px">
+        ${artifacts.documents.length ? artifacts.documents.map(fileLink).join("") :
+          `<span style="color:var(--text-muted);font-size:11.5px">nothing built yet</span>`}
+      </div>
+    </div>
+
+    <div class="step">
+      <h3>3 · Scans</h3>
+      <div class="dropzone" id="dropzone" tabindex="0">
+        Drop scanned PDFs here, or click to choose
+        <input type="file" id="scan-input" multiple accept=".pdf,.jpg,.jpeg,.png,.tif,.tiff" hidden />
+      </div>
+      <div class="row" style="margin-top:7px">
+        <button id="btn-capture" ${artifacts.scans.length ? "" : "disabled"}>Capture ${
+          artifacts.scans.length ? `(${artifacts.scans.length} file${artifacts.scans.length > 1 ? "s" : ""})` : ""}</button>
+      </div>
+      ${cap.pages ? `<div class="hint">${cap.pages} page(s) captured across ${cap.copies ?? "?"} copy(ies).</div>` : ""}
+    </div>
+
+    <div class="step">
+      <h3>4 · Marks</h3>
+      <div class="row">
+        <button id="btn-mark" ${cap.pages ? "" : "disabled"}>Mark</button>
+        <select id="export-format">
+          <option value="csv">CSV</option>
+          <option value="ods">ODS</option>
+          <option value="list">PDF list</option>
+        </select>
+        <button id="btn-export" ${s.marking?.marks ? "" : "disabled"}>Export</button>
+      </div>
+      <div class="files" style="margin-top:7px">
+        ${artifacts.exports.length ? artifacts.exports.slice(0, 5).map(fileLink).join("") :
+          `<span style="color:var(--text-muted);font-size:11.5px">no exports yet</span>`}
+      </div>
+    </div>`;
+
+  $("handoff-link")?.addEventListener("click", (e) => { e.preventDefault(); openDesktop(); });
+  $("btn-check").addEventListener("click", () => runJob("check", `/api/projects/${state.project}/check`));
+  $("btn-compile").addEventListener("click", doCompile);
+  $("btn-capture")?.addEventListener("click", () =>
+    runJob("capture", `/api/projects/${state.project}/capture`));
+  $("btn-mark")?.addEventListener("click", () =>
+    runJob("mark", `/api/projects/${state.project}/mark`, { associate: true }));
+  $("btn-export")?.addEventListener("click", () =>
+    runJob("export", `/api/projects/${state.project}/export`, { format: $("export-format").value }));
+
+  wireDropzone();
+}
+
+function wireDropzone() {
+  const zone = $("dropzone");
+  const input = $("scan-input");
+  if (!zone) return;
+
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("keydown", (e) => { if (e.key === "Enter") input.click(); });
+  input.addEventListener("change", () => uploadScans(input.files));
+
+  ["dragenter", "dragover"].forEach((type) =>
+    zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.add("over"); }));
+  ["dragleave", "drop"].forEach((type) =>
+    zone.addEventListener(type, (e) => { e.preventDefault(); zone.classList.remove("over"); }));
+  zone.addEventListener("drop", (e) => uploadScans(e.dataTransfer.files));
+}
+
+async function uploadScans(fileList) {
+  if (!fileList || !fileList.length) return;
+  const form = new FormData();
+  for (const file of fileList) form.append("files", file);
+  try {
+    const res = await api(`/api/projects/${state.project}/scans`, { method: "POST", body: form });
+    toast(`uploaded ${res.saved.length} file(s)`);
+    await renderPipeline();
+  } catch (e) { toast(e.message, true); }
+}
+
+/* ---------------------------------------------------------------- editor */
+async function openFile(path) {
+  if (state.dirty && !confirm("Discard unsaved changes?")) return;
+  try {
+    const file = await api(`/api/file?path=${encodeURIComponent(path)}`);
+    state.openFile = file;
+    state.dirty = false;
+    const editor = $("editor");
+    editor.value = file.content;
+    editor.disabled = false;
+    renderEditorHeader();
+    renderFiles();
+  } catch (e) { toast(e.message, true); }
+}
+
+function renderEditorHeader() {
+  const file = state.openFile;
+  $("editor-path").innerHTML = file
+    ? `${file.path}${state.dirty ? ` <span class="dirty-dot">●</span>` : ""}`
+    : "no file open";
+  $("btn-save").disabled = !file || !state.dirty;
+  $("btn-revert").disabled = !file || !state.dirty;
+}
+
+async function saveFile() {
+  const file = state.openFile;
+  if (!file || !state.dirty) return;
+  try {
+    const res = await api("/api/file", {
+      method: "PUT",
+      body: { path: file.path, content: $("editor").value, modified: file.modified },
+    });
+    file.content = $("editor").value;
+    file.modified = res.modified;
+    state.dirty = false;
+    renderEditorHeader();
+    toast("saved");
+    loadFiles();
+  } catch (e) {
+    // A 409 means the desktop or the host editor changed the same file.
+    toast(e.message, true);
+  }
+}
+
+/* ------------------------------------------------------------------ jobs */
+async function runJob(kind, url, body) {
+  if (state.job) { toast("a job is already running", true); return; }
+  try {
+    const job = await api(url, { method: "POST", body: body || {} });
+    state.job = { id: job.id, kind, offset: 0 };
+    $("log").textContent = "";
+    setConsoleOpen(true);
+    setJobUI(true, kind);
+    pollJob();
+    return job;
+  } catch (e) {
+    toast(e.message, true);
+    throw e;
+  }
+}
+
+function setJobUI(running, kind, outcome) {
+  const pill = $("job-pill");
+  $("job-spinner").hidden = !running;
+  $("btn-stop").hidden = !running;
+  $("console-label").textContent = kind ? `Console — ${kind}` : "Console";
+  pill.hidden = false;
+  if (running) { pill.textContent = "running"; pill.className = "status-pill run"; }
+  else if (outcome === 0) { pill.textContent = "done"; pill.className = "status-pill ok"; }
+  else { pill.textContent = `failed (${outcome})`; pill.className = "status-pill fail"; }
+}
+
+async function pollJob() {
+  if (!state.job) return;
+  try {
+    const data = await api(`/api/jobs/${state.job.id}?offset=${state.job.offset}`);
+    if (data.log) {
+      const pre = $("log");
+      // Only stick to the bottom if the reader was already there — otherwise
+      // scrolling back through a long LaTeX error yanks you away mid-read.
+      const atBottom = pre.scrollHeight - pre.scrollTop - pre.clientHeight < 40;
+      pre.textContent += data.log;
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+      state.job.offset = data.offset;
+    }
+    if (data.running) {
+      state.polling = setTimeout(pollJob, 600);
+      return;
+    }
+    const kind = state.job.kind;
+    state.job = null;
+    setJobUI(false, kind, data.returncode);
+    toast(data.returncode === 0 ? `${kind} finished` : `${kind} failed — see the console`,
+          data.returncode !== 0);
+    await refreshStatus();
+    if (kind === "compile" || kind === "sync") await loadFiles();
+  } catch (e) {
+    state.job = null;
+    setJobUI(false, null, 1);
+    toast(e.message, true);
+  }
+}
+
+async function doCompile() {
+  const raw = $("copies")?.value;
+  const body = raw ? { copies: Number(raw) } : {};
+  await runJob("compile", `/api/projects/${state.project}/compile`, body);
+}
+
+async function checkThenCompile() {
+  if (!state.project || state.job) return;
+  await runJob("check", `/api/projects/${state.project}/check`);
+  // Wait for the checkers before compiling: compiling a bank whose draw counts
+  // are wrong just buries the real error under LaTeX output.
+  const wait = setInterval(async () => {
+    if (state.job) return;
+    clearInterval(wait);
+    if ($("job-pill").classList.contains("ok")) await doCompile();
+    else toast("checks failed — not compiling", true);
+  }, 400);
+}
+
+/* -------------------------------------------------------------- console */
+function setConsoleOpen(open) {
+  $("console").classList.toggle("collapsed", !open);
+  $("console-caret").textContent = open ? "▾" : "▸";
+}
+
+/* ------------------------------------------------------------------ misc */
+function openDesktop() {
+  const port = state.config?.novnc_port || "6080";
+  window.open(`${location.protocol}//${location.hostname}:${port}/`, "_blank", "noopener");
+}
+
+async function syncRepo() {
+  const message = prompt("Commit message:", `AMC session ${new Date().toISOString().slice(0, 16).replace("T", " ")}`);
+  if (message === null) return;
+  await runJob("sync", "/api/git/sync", { message, push: true });
+}
+
+/* ------------------------------------------------------------------ init */
+async function init() {
+  try {
+    state.config = await api("/api/config");
+  } catch (e) {
+    toast(e.message, true);
+    return;
+  }
+  $("repo-name").textContent = state.config.repo.split("/").filter(Boolean).pop() || "workbench";
+  state.project = localStorage.getItem("amcProject");
+
+  try { await loadProjects(); }
+  catch (e) { toast(e.message, true); }
+
+  try {
+    const git = await api("/api/git/status");
+    if (git.available) {
+      $("btn-sync").title = `Branch ${git.branch}${git.dirty ? ` · ${git.dirty} change(s)` : " · clean"}`;
+      $("btn-sync").textContent = git.dirty ? `Sync (${git.dirty})` : "Sync";
+    } else {
+      $("btn-sync").disabled = true;
+    }
+  } catch (_) { $("btn-sync").disabled = true; }
+
+  /* events */
+  $("project-select").addEventListener("change", (e) => selectProject(e.target.value));
+  $("btn-desktop").addEventListener("click", openDesktop);
+  $("btn-sync").addEventListener("click", syncRepo);
+  $("btn-help").addEventListener("click", () => $("help").showModal());
+  $("btn-save").addEventListener("click", saveFile);
+  $("btn-revert").addEventListener("click", () => {
+    if (!state.openFile) return;
+    $("editor").value = state.openFile.content;
+    state.dirty = false;
+    renderEditorHeader();
+  });
+  $("console-toggle").addEventListener("click", () =>
+    setConsoleOpen($("console").classList.contains("collapsed")));
+  $("btn-clear").addEventListener("click", () => { $("log").textContent = ""; });
+  $("btn-stop").addEventListener("click", async () => {
+    if (!state.job) return;
+    try { await api(`/api/jobs/${state.job.id}/cancel`, { method: "POST" }); toast("stopping…"); }
+    catch (e) { toast(e.message, true); }
+  });
+
+  $("editor").addEventListener("input", () => {
+    const wasDirty = state.dirty;
+    state.dirty = state.openFile && $("editor").value !== state.openFile.content;
+    if (wasDirty !== state.dirty) renderEditorHeader();
+  });
+
+  document.addEventListener("keydown", (e) => {
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); saveFile(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); checkThenCompile(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === "l") {
+      e.preventDefault();
+      setConsoleOpen($("console").classList.contains("collapsed"));
+      return;
+    }
+    if (e.key === "?" && !typing) { e.preventDefault(); $("help").showModal(); }
+  });
+
+  window.addEventListener("beforeunload", (e) => {
+    if (state.dirty) { e.preventDefault(); e.returnValue = ""; }
+  });
+}
+
+init();
+</script>
+</body>
+</html>

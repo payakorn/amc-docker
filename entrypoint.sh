@@ -4,9 +4,10 @@
 #   Xtigervnc :1       the X server, with its framebuffer exported as VNC
 #   xfce4-session      window manager, panel, desktop icons
 #   websockify         wraps VNC in WebSocket + serves noVNC's HTML client
+#   uvicorn            the web interface for the batch half of the workflow
 #
-# Everything runs in the foreground of this script; if any of the three dies,
-# the container exits and Compose's restart policy brings it back.
+# Everything runs in the foreground of this script; if any of them dies, the
+# container exits and Compose's restart policy brings it back.
 
 set -euo pipefail
 
@@ -17,6 +18,8 @@ set -euo pipefail
 : "${VNC_PORT:=5901}"
 : "${AMC_PROJECTS_DIR:=/work/repo/exam}"
 : "${AMC_AUTOSTART:=1}"
+: "${AMC_WEB:=1}"
+: "${AMC_WEB_PORT:=8080}"
 
 export HOME=/home/amc
 export DISPLAY=:1
@@ -184,6 +187,28 @@ dbus-launch --exit-with-session xfce4-session &
 log "serving noVNC on http://0.0.0.0:${NOVNC_PORT}/"
 websockify --web=/usr/share/novnc "$NOVNC_PORT" "localhost:${VNC_PORT}" &
 
-log "ready — open http://localhost:${NOVNC_PORT}/vnc.html (password: ${VNC_PASSWORD})"
+# ---------------------------------------------------------------------------
+# The web interface.
+#
+# Started after the desktop so that its "open the desktop" link points at
+# something that is already running. Set AMC_WEB=0 for the desktop alone.
+# ---------------------------------------------------------------------------
+if [ "$AMC_WEB" = "1" ] && [ -x /opt/amc-web/.venv/bin/uvicorn ]; then
+  export AMC_PROJECTS_DIR AMC_REPO NOVNC_PORT
+  export AMC_WEB_JOBDIR="${AMC_WEB_JOBDIR:-/tmp/amc-web-jobs}"
+  mkdir -p "$AMC_WEB_JOBDIR"
+  log "serving the web interface on http://0.0.0.0:${AMC_WEB_PORT}/"
+  if [ -n "${AMC_WEB_TOKEN:-}" ]; then
+    log "  (token required — send it as the x-amc-token header, or paste it when asked)"
+  fi
+  /opt/amc-web/.venv/bin/uvicorn \
+    --app-dir /opt/amc-web --host 0.0.0.0 --port "$AMC_WEB_PORT" \
+    --log-level warning app:app &
+elif [ "$AMC_WEB" = "1" ]; then
+  log "web interface not installed (no /opt/amc-web/.venv) — desktop only"
+fi
+
+log "ready — desktop: http://localhost:${NOVNC_PORT}/vnc.html (password: ${VNC_PASSWORD})"
+[ "$AMC_WEB" = "1" ] && log "        web:     http://localhost:${AMC_WEB_PORT}/" || true
 wait -n
 log "a service exited; stopping container"

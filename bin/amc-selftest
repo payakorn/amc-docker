@@ -46,6 +46,23 @@ have tigervncpasswd
 have websockify
 have xdpyinfo
 
+# The wrappers the web interface drives. A missing one turns a button in the
+# browser into an unexplained failure, so check they are all installed.
+for w in amc-opts amc-compile amc-capture amc-mark amc-export amc-status \
+         amc-check amc-save amc-project-init; do
+  have "$w"
+done
+
+if [ -x /opt/amc-web/.venv/bin/uvicorn ]; then
+  if /opt/amc-web/.venv/bin/python -c 'import fastapi, uvicorn, multipart' 2>/dev/null; then
+    ok "web interface dependencies (fastapi, uvicorn, multipart)"
+  else
+    bad "web interface venv is incomplete" "rebuild the image: docker compose build --no-cache"
+  fi
+else
+  note "web interface not installed" "only the desktop is available; set AMC_WEB=1 and rebuild"
+fi
+
 if command -v magick >/dev/null 2>&1 || command -v convert >/dev/null 2>&1; then
   ok "ImageMagick present"
 else
@@ -96,6 +113,25 @@ if timeout 3 bash -c 'exec 3<>/dev/tcp/localhost/5901' 2>/dev/null; then
   ok "VNC accepting connections on 5901"
 else
   bad "nothing listening on 5901"
+fi
+
+web_port=${AMC_WEB_PORT:-8080}
+if [ "${AMC_WEB:-1}" = "1" ]; then
+  if curl -fsS --max-time 5 "http://localhost:${web_port}/healthz" >/dev/null 2>&1; then
+    ok "web interface answering on ${web_port}"
+    # A 401 here is the correct answer when a token is set, and it still
+    # proves the app is routing requests rather than merely listening.
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "http://localhost:${web_port}/api/projects" 2>/dev/null)
+    case "$code" in
+      200) ok "web interface can list projects" ;;
+      401) ok "web interface requires its token (AMC_WEB_TOKEN is set)" ;;
+      *)   bad "web interface returned HTTP $code for /api/projects" "check: docker compose logs amc" ;;
+    esac
+  else
+    bad "web interface not answering on ${web_port}" "uvicorn may have died — check: docker compose logs amc"
+  fi
+else
+  printf '  skipped  web interface (AMC_WEB=0)\n'
 fi
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,95 @@
+#!/bin/bash
+# Turn captured boxes into marks — AMC's "Mark" button, plus automatic
+# association where the project is set up for it.
+#
+#   note               apply the scoring rules to what data capture measured
+#   association-auto   match each paper to a student, by reading the student
+#                      number the student coded on the answer sheet
+#
+# Association only runs when the project actually has a student list configured
+# (options.xml: listeetudiants, liste_key, assoc_code). Without one there is
+# nothing to match against, so it is skipped rather than failed.
+#
+# Usage:
+#   amc-mark [-A] <project-dir>
+#
+#   -A  mark only, skip automatic association
+#
+# Thresholds and the mark scale come from options.xml, so changing them in
+# AMC's Preferences changes what this produces.
+#
+# Papers the automatic association cannot place — an unreadable student number,
+# a digit the student overwrote — stay unassociated on purpose. Fixing those
+# means looking at the scanned number field, which is AMC's association dialog
+# on the desktop at :6080.
+
+set -uo pipefail
+
+associate=1
+while getopts ":Ah" opt; do
+  case "$opt" in
+    A) associate=0 ;;
+    h) sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option -$OPTARG" >&2; exit 2 ;;
+  esac
+done
+shift $((OPTIND - 1))
+
+project=${1:-$PWD}
+project=${project%/}
+[ -d "$project" ] || { echo "no such directory: $project" >&2; exit 1; }
+
+eval "$(amc-opts "$project")" || exit 1
+
+cd "$project" || exit 1
+
+[ -f "$AMC_data/capture.sqlite" ] || {
+  echo "nothing has been captured yet in $project" >&2
+  echo "run amc-capture first — there are no measured boxes to mark" >&2
+  exit 1
+}
+
+note_args=(--data "$AMC_data"
+           --seuil "$AMC_seuil"
+           --seuil-up "$AMC_seuil_up"
+           --grain "$AMC_note_grain"
+           --arrondi "$AMC_note_arrondi_flag"
+           --notemax "$AMC_note_max")
+[ -n "$AMC_note_min" ] && note_args+=(--notemin "$AMC_note_min")
+if [ "$AMC_note_max_plafond" = "1" ]; then
+  note_args+=(--plafond)
+else
+  note_args+=(--no-plafond)
+fi
+
+echo "== marking (threshold $AMC_seuil, out of $AMC_note_max)"
+if ! timeout 900 auto-multiple-choice note "${note_args[@]}" </dev/null; then
+  echo "!! marking failed" >&2
+  echo "   if it complains about missing scoring data, run amc-compile — the" >&2
+  echo "   scoring rules are extracted from the LaTeX source, not from the scans" >&2
+  exit 1
+fi
+
+if [ "$associate" = 1 ]; then
+  if [ -n "$AMC_listeetudiants" ] && [ -n "$AMC_liste_key" ] && [ -n "$AMC_assoc_code" ]; then
+    if [ -f "$AMC_listeetudiants" ]; then
+      echo
+      echo "== associating papers with students (code '$AMC_assoc_code')"
+      timeout 600 auto-multiple-choice association-auto \
+        --data "$AMC_data" \
+        --notes-id "$AMC_assoc_code" \
+        --liste "$AMC_listeetudiants" \
+        --liste-key "$AMC_liste_key" \
+        --encodage-liste "$AMC_encodage_liste" </dev/null \
+        || echo "!! automatic association reported problems — finish it in AMC's association dialog" >&2
+    else
+      echo "student list not found: $AMC_listeetudiants — skipping association" >&2
+    fi
+  else
+    echo "no student list configured — skipping association"
+    echo "  (set it in AMC: project tab → 'Students list', or leave papers unassociated)"
+  fi
+fi
+
+echo
+amc-status "$project" --text 2>/dev/null || echo "marking finished"
