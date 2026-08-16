@@ -7,8 +7,8 @@ small XFCE desktop, and puts two front doors on it.
 
 | | | |
 |---|---|---|
-| **<http://localhost:8080/>** | the web interface | edit questions, run the checkers, compile, capture scans, mark, export |
-| **<http://localhost:6080/>** | the AMC desktop | all of AMC, unmodified — and the only place to review ambiguous boxes and match papers to students |
+| **<http://localhost:6090/>** | the web interface | edit questions, run the checkers, compile, capture scans, mark, export |
+| **<http://localhost:6091/>** | the AMC desktop | all of AMC, unmodified — and the only place to review ambiguous boxes and match papers to students |
 
 Most of a working session is the first one: write a question, check it, rebuild
 the PDF, look at it. That is a form and a log, and a browser tab does it better
@@ -72,13 +72,13 @@ docker compose up -d --build
 The first build pulls TeX Live and downloads roughly 2–3 GB; expect 10–20
 minutes. Later starts take a couple of seconds.
 
-**5. Open it.** <http://localhost:8080/> for the web interface. The desktop is
-at <http://localhost:6080/>, password `VNC_PASSWORD`, and the web interface's
+**5. Open it.** <http://localhost:6090/> for the web interface. The desktop is
+at <http://localhost:6091/>, password `VNC_PASSWORD`, and the web interface's
 **Desktop ↗** button opens it for you.
 
 For a smoother desktop session than the browser gives (marking hundreds of
 papers, for instance), macOS's built-in Screen Sharing talks to the same
-desktop: `open vnc://localhost:5901`.
+desktop: `open vnc://localhost:6092`.
 
 ---
 
@@ -207,6 +207,7 @@ Tool chain              auto-multiple-choice, pdflatex, xelatex, Xtigervnc,
                         dependencies, automultiplechoice.sty, pgfplots, tgtermes
 Desktop and remote      X on :1, XFCE running, noVNC on 6080, VNC on 5901,
                         the web interface answering on 8080
+                        (the ports inside the container, not the published ones)
 Wiring                  repo mounted and writable, git works, projects visible,
                         AMC preferences seeded, GitHub SSH authentication
 Pipeline                AMC compiles a 2-copy exam, layout database builds,
@@ -259,8 +260,8 @@ The ones that matter most:
 | `AMC_PROJECTS_SUBDIR` | Folder inside it holding projects (`exam`, or `.`). |
 | `VNC_PASSWORD` | Password for the desktop and Screen Sharing. Change it. |
 | `VNC_GEOMETRY` | Desktop size, e.g. `1920x1200`. |
-| `BIND_ADDR` | `127.0.0.1` (default) keeps everything on the Mac mini only. |
-| `WEB_PORT` | Web interface port, default `8080`. |
+| `BIND_ADDR` | `127.0.0.1` (default) keeps everything on the Mac mini only; `0.0.0.0` opens both front doors to the LAN. |
+| `WEB_PORT` | Web interface port on the host, default `6090`. `NOVNC_PORT` (`6091`) and `VNC_PORT` (`6092`) alongside it. |
 | `AMC_WEB` | `0` to run the desktop alone, without the web interface. |
 | `AMC_WEB_TOKEN` | Shared secret for the web interface. See below. |
 | `AMC_LATEX_ENGINE` | Default engine for new projects: `pdflatex` or `xelatex`. |
@@ -280,18 +281,67 @@ To work on a different course, point `EXAM_REPO` at that repo and restart:
 ## Reaching it from off the Mac mini
 
 The defaults bind to `127.0.0.1`, so both front doors are reachable only from
-the Mac mini itself. Keep it that way and tunnel in:
+the Mac mini itself.
+
+### On the same network (LAN)
+
+For a co-teacher's laptop in the same office, or your own laptop on the same
+wifi, one line in `.env`:
+
+```dotenv
+BIND_ADDR=0.0.0.0
+```
+
+Then `docker compose up -d`, and browse from the other machine to
+`http://<mac-mini-ip>:6090/` for the web interface and
+`http://<mac-mini-ip>:6091/vnc.html` for the desktop. Find that address with
+`ipconfig getifaddr en0` on macOS, `hostname -I` on Linux; the machine's
+`.local` name (`http://mac-mini.local:6090/`) usually works too.
+
+**Which port to open.** Three are published, and they are not equally needed:
+
+| Port | What | Open it? |
+|---|---|---|
+| `6090` | the web interface | **Yes** — this is the one. The whole batch workflow lives here, and it is the only port a colleague needs. |
+| `6091` | noVNC, the desktop in a browser | Only if someone other than you has to fix ambiguous boxes or match papers. |
+| `6092` | raw VNC, for Screen Sharing | Rarely. Unencrypted, and 6091 already reaches the same desktop. |
+
+To open just the web interface, drop the other two `ports:` lines from
+`docker-compose.yml` — the services keep running inside the container, they
+simply stop being reachable, and the **Desktop ↗** button then only works from
+the Mac mini itself.
+
+Two things happen automatically once `BIND_ADDR` is not loopback, because **the
+web interface runs commands and writes to the exam repo**:
+
+- **A token is required.** If `AMC_WEB_TOKEN` is empty, the container generates
+  one at first start, keeps it in the `amc-home` volume so it survives
+  restarts, and prints it — `docker compose logs amc | grep token`. Each
+  browser is asked for it once and remembers it. Set `AMC_WEB_TOKEN` in `.env`
+  to choose your own instead.
+- **The startup log warns** if `VNC_PASSWORD` is still the example value.
+
+To publish on one interface only — the wired LAN, say, but not a guest
+network — put that address in `BIND_ADDR` instead of `0.0.0.0`. If the Mac
+mini's firewall is on (*System Settings → Network → Firewall*), allow incoming
+connections for Docker.
+
+None of this is encrypted: plain HTTP, and VNC's own weak authentication. It is
+fine on a network you trust, and not fine on conference wifi or the open
+internet.
+
+### From anywhere else
 
 - **Tailscale** — install on the Mac mini and on your laptop, then browse to
-  `http://<mac-mini-tailscale-name>:8080/`. Simplest, and encrypted.
+  `http://<mac-mini-tailscale-name>:6090/`. Encrypted, and no ports exposed to
+  the LAN at all; leave `BIND_ADDR=0.0.0.0` and let Tailscale's ACLs do the
+  gatekeeping.
 - **Cloudflare Tunnel** — put `cloudflared` in front of the ports with Access in
-  front of it, if you want a real hostname.
+  front of it, if you want a real hostname and TLS.
 
-Do not simply set `BIND_ADDR=0.0.0.0` and forward a port. VNC is unencrypted and
-noVNC here is plain HTTP; and **the web interface runs commands and writes to
-the exam repo**, so anyone who can reach port 8080 can do both. If you do expose
-it beyond localhost, set `AMC_WEB_TOKEN` to a long random string — the page asks
-for it once and keeps it — and put TLS in front.
+Do not port-forward 6090 or 6091 from the router. Anyone who reaches port 6090
+with the token can run commands as the container user and rewrite the exam
+repo; port 6092 is unencrypted VNC.
 
 ---
 
@@ -310,7 +360,7 @@ startup. See `fonts/README.md`.
 the entrypoint prints each service as it starts. `AMC_WEB=0` in `.env` turns it
 off entirely, which is the first thing to check.
 
-**Browser shows "Failed to connect to server" on 6080.** The desktop is still
+**Browser shows "Failed to connect to server" on the desktop port.** The desktop is still
 starting, or Xvnc died. Same log.
 
 **Blank grey desktop, no AMC.** XFCE started but AMC did not. Open a terminal

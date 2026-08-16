@@ -9,16 +9,19 @@ services:
     container_name: amc
     hostname: amc
 
+    # Left of the colon is the port on the host, right of it the port inside the
+    # container. Only the host side is configurable — the services inside always
+    # listen on 8080/6080/5901, and the healthcheck below talks to those.
     ports:
       # The web interface: edit questions, check, compile, capture, mark,
-      # export. Most sessions live here.
-      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-8080}:8080"
+      # export. Most sessions live here — if you open one port, open this one.
+      - "${BIND_ADDR:-127.0.0.1}:${WEB_PORT:-6090}:8080"
       # noVNC web client — the full AMC desktop, for reviewing ambiguous boxes
       # and matching papers to students.
-      - "${BIND_ADDR:-127.0.0.1}:${NOVNC_PORT:-6080}:6080"
-      # Raw VNC, for macOS Screen Sharing (vnc://localhost:5901). Smoother than
+      - "${BIND_ADDR:-127.0.0.1}:${NOVNC_PORT:-6091}:6080"
+      # Raw VNC, for macOS Screen Sharing (vnc://<host>:6092). Smoother than
       # the browser for long marking sessions; drop this line if unused.
-      - "${BIND_ADDR:-127.0.0.1}:${VNC_PORT:-5901}:5901"
+      - "${BIND_ADDR:-127.0.0.1}:${VNC_PORT:-6092}:5901"
 
     environment:
       VNC_PASSWORD: ${VNC_PASSWORD:-amc2026}
@@ -33,6 +36,15 @@ services:
       # this service runs shell commands on request, so treat it accordingly.
       AMC_WEB: ${AMC_WEB:-1}
       AMC_WEB_TOKEN: ${AMC_WEB_TOKEN:-}
+      # The container cannot see how Docker published its ports, so tell it.
+      # Anything other than a loopback address means "reachable from the LAN",
+      # and the entrypoint then insists on a web token and a real VNC password.
+      AMC_BIND_ADDR: ${BIND_ADDR:-127.0.0.1}
+      # Same reason: the web interface's "open the desktop" button and the URLs
+      # in the startup log are for a browser, so they need the published ports,
+      # not the internal 6080/8080.
+      AMC_NOVNC_PUBLIC_PORT: ${NOVNC_PORT:-6091}
+      AMC_WEB_PUBLIC_PORT: ${WEB_PORT:-6090}
       GIT_USER_NAME: ${GIT_USER_NAME:-}
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
 

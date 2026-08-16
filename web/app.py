@@ -40,7 +40,13 @@ from pydantic import BaseModel
 
 REPO = Path(os.environ.get("AMC_REPO", "/work/repo")).resolve()
 PROJECTS_DIR = Path(os.environ.get("AMC_PROJECTS_DIR", str(REPO / "exam"))).resolve()
-NOVNC_PORT = os.environ.get("NOVNC_PORT", "6080")
+# The port the *browser* must use to reach noVNC, which is the one Docker
+# published on the host — not NOVNC_PORT, which is where websockify listens
+# inside the container. Compose passes it in; fall back to the internal port
+# for a bare `docker run` with no mapping.
+NOVNC_PORT = os.environ.get(
+    "AMC_NOVNC_PUBLIC_PORT", os.environ.get("NOVNC_PORT", "6080")
+).strip()
 TOKEN = os.environ.get("AMC_WEB_TOKEN", "").strip()
 JOB_DIR = Path(os.environ.get("AMC_WEB_JOBDIR", "/tmp/amc-web-jobs"))
 STATIC = Path(__file__).parent / "static"

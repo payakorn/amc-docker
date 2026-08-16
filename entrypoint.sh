@@ -20,6 +20,7 @@ set -euo pipefail
 : "${AMC_AUTOSTART:=1}"
 : "${AMC_WEB:=1}"
 : "${AMC_WEB_PORT:=8080}"
+: "${AMC_BIND_ADDR:=127.0.0.1}"
 
 export HOME=/home/amc
 export DISPLAY=:1
@@ -43,6 +44,44 @@ vncpass_tool=$(command -v tigervncpasswd || command -v vncpasswd || true)
 mkdir -p "$HOME/.vnc"
 printf '%s\n' "$VNC_PASSWORD" | "$vncpass_tool" -f > "$HOME/.vnc/passwd"
 chmod 600 "$HOME/.vnc/passwd"
+
+# ---------------------------------------------------------------------------
+# Exposure.
+#
+# BIND_ADDR in .env decides who Docker lets in. Loopback means "this host
+# only"; anything else — 0.0.0.0, or one specific LAN address — means every
+# machine on the network can reach both front doors. The web interface runs
+# shell commands and writes to the exam repo, so it does not go out onto a LAN
+# without a token: if none was set, mint one, keep it in the amc-home volume so
+# it survives restarts, and print it.
+# ---------------------------------------------------------------------------
+case "$AMC_BIND_ADDR" in
+  127.0.0.1|localhost|::1|"[::1]") amc_exposed=0 ;;
+  *)                               amc_exposed=1 ;;
+esac
+
+if [ "$amc_exposed" = 1 ]; then
+  log "published on ${AMC_BIND_ADDR} — reachable from other machines on the network"
+
+  if [ "$AMC_WEB" = "1" ] && [ -z "${AMC_WEB_TOKEN:-}" ]; then
+    token_file="$HOME/.amc-web-token"
+    if [ ! -s "$token_file" ]; then
+      head -c 24 /dev/urandom | base64 | tr -d '=+/\n' > "$token_file"
+      chmod 600 "$token_file"
+    fi
+    AMC_WEB_TOKEN=$(cat "$token_file")
+    export AMC_WEB_TOKEN
+    log "no AMC_WEB_TOKEN set; generated one and saved it to ${token_file}"
+    log "  token: ${AMC_WEB_TOKEN}"
+    log "  the page asks for it once per browser; set AMC_WEB_TOKEN in .env to pick your own"
+  fi
+
+  if [ "$VNC_PASSWORD" = "amc2026" ]; then
+    log "warning: VNC_PASSWORD is still the example value — change it in .env"
+  fi
+
+  log "note: VNC and HTTP here are unencrypted; keep this to a network you trust"
+fi
 
 # ---------------------------------------------------------------------------
 # Git identity and SSH keys.
@@ -208,7 +247,17 @@ elif [ "$AMC_WEB" = "1" ]; then
   log "web interface not installed (no /opt/amc-web/.venv) — desktop only"
 fi
 
-log "ready — desktop: http://localhost:${NOVNC_PORT}/vnc.html (password: ${VNC_PASSWORD})"
-[ "$AMC_WEB" = "1" ] && log "        web:     http://localhost:${AMC_WEB_PORT}/" || true
+# These URLs are for a browser on the host, so they need the ports Docker
+# published — NOVNC_PORT and AMC_WEB_PORT are where the services listen in
+# here, which is a different pair of numbers. The container has no idea what
+# the host is called on the LAN, so say "<this-machine>" and let the reader
+# fill it in.
+ready_host=localhost
+[ "$amc_exposed" = 1 ] && ready_host='<this-machine>'
+ready_novnc="${AMC_NOVNC_PUBLIC_PORT:-$NOVNC_PORT}"
+ready_web="${AMC_WEB_PUBLIC_PORT:-$AMC_WEB_PORT}"
+
+log "ready — desktop: http://${ready_host}:${ready_novnc}/vnc.html (password: ${VNC_PASSWORD})"
+[ "$AMC_WEB" = "1" ] && log "        web:     http://${ready_host}:${ready_web}/" || true
 wait -n
 log "a service exited; stopping container"
