@@ -84,7 +84,9 @@ def load(project_dir):
 
     # The student list is stored relative to the project (or absolute). Resolve
     # it once here so callers do not each have to.
+    # The GUI writes it as "%PROJET/students.csv", the same placeholder as texsrc.
     if opts["listeetudiants"]:
+        opts["listeetudiants"] = opts["listeetudiants"].replace("%PROJET/", "").replace("%PROJET", "")
         opts["listeetudiants"] = os.path.join(project_dir, opts["listeetudiants"]) \
             if not os.path.isabs(opts["listeetudiants"]) else opts["listeetudiants"]
 
