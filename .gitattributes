@@ -1,0 +1,6 @@
+# Linux line endings everywhere: these scripts are copied into a Linux image,
+# and a Windows checkout with CRLF makes them fail ("bad interpreter").
+* text=auto eol=lf
+*.ttf binary
+*.otf binary
+*.png binary

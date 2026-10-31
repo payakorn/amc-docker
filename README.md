@@ -80,16 +80,39 @@ For a smoother desktop session than the browser gives (marking hundreds of
 papers, for instance), macOS's built-in Screen Sharing talks to the same
 desktop: `open vnc://localhost:6092`.
 
+### On Windows
+
+The same container runs on Windows 10/11 with
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) (WSL 2 backend, the
+default). Differences from the Mac steps above:
+
+```powershell
+git clone -c core.autocrlf=false https://github.com/payakorn/amc-docker.git
+cd amc-docker; copy .env.example .env; notepad .env
+docker compose up -d --build
+```
+
+- `-c core.autocrlf=false` keeps the scripts' Linux line endings (`.gitattributes` enforces
+  this too); with Windows endings the container fails to start.
+- In `.env`, write paths with forward slashes: `EXAM_REPO=C:/Users/<you>/projects`,
+  `SSH_DIR=C:/Users/<you>/.ssh`.
+- The desktop is at <http://localhost:6091/vnc.html> as on the Mac; for a separate window use
+  TigerVNC or RealVNC Viewer on `localhost:6092` instead of Screen Sharing.
+- `docker exec amc …` and `docker compose exec amc …` work unchanged in PowerShell.
+
+A step-by-step guide for lecturers (both systems, with exam templates) is in
+[amc-exam-guide](https://github.com/payakorn/amc-exam-guide).
+
 ---
 
 ## Daily use
 
 ### Opening an existing project from the repo
 
-Both front doors list the folders inside `EXAM_REPO/exam`. A project cloned from
-git will show as **not set up**: AMC identifies a project by its `options.xml`,
-which every one of these exam repos gitignores as generated output. The web
-interface offers a **Create project** button for exactly this (pick `xelatex`
+Both front doors list the AMC projects found under `EXAM_REPO`. AMC identifies a
+project by its `options.xml`; **keep that file in git**, since it carries the marking
+settings (`assoc_code`, the student list). A folder without one shows as **not set
+up**, and the web interface offers a **Create project** button for exactly this (pick `xelatex`
 for a Thai exam); from a terminal it is:
 
 ```bash
@@ -158,8 +181,8 @@ Push uses the SSH keys mounted from the Mac's `~/.ssh` (read-only, copied in and
 re-permissioned at startup, because SSH rejects keys that look world-readable).
 If a key has a passphrase, run `amc-save` from a terminal so you can type it.
 
-Note that `exam/.gitignore` deliberately excludes `data/`, `cr/`, `scans/`,
-`*.sqlite` and `options.xml`. Scans and the capture/scoring databases stay on
+Note that the exam repos' `.gitignore` deliberately excludes `data/`, `cr/`,
+`scans/` and `*.sqlite` (but not `options.xml`, which is tracked). Scans and the capture/scoring databases stay on
 the Mac mini and do not go to GitHub — that is intentional, they are large and
 contain student work.
 

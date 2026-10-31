@@ -76,7 +76,7 @@ if [ "$amc_exposed" = 1 ]; then
     log "  the page asks for it once per browser; set AMC_WEB_TOKEN in .env to pick your own"
   fi
 
-  if [ "$VNC_PASSWORD" = "amc2026" ]; then
+  if [ "$VNC_PASSWORD" = "amc2026" ] || [ "$VNC_PASSWORD" = "change-me" ]; then
     log "warning: VNC_PASSWORD is still the example value — change it in .env"
   fi
 
