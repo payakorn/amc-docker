@@ -1,0 +1,40 @@
+% ---------------------------------------------------------------------------
+% Short choices on one line (read by exam.tex when config.tex sets
+% \ShortChoicesOnLinetrue). Every \begin{choices} is first run in a measuring
+% pass; if all four choices fit on one line they are set with AMC's
+% choiceshoriz, if two fit side by side they are set as a 2x2 grid, otherwise
+% the usual one-per-line list is used. Needs the environ package (loaded by
+% exam.tex).
+% ---------------------------------------------------------------------------
+\newlength{\ACmax}\newlength{\ACsum}\newlength{\ACtmp}\newcount\ACn
+\newlength{\AClabel}\setlength{\AClabel}{2.6em}% per choice on one line: oval box and its gap, inside a .25\linewidth box
+\newlength{\ACgridlabel}\setlength{\ACgridlabel}{2.6em}% per choice in the 2x2 grid
+\newcommand{\ACmeasure}[1]{%
+  \settowidth{\ACtmp}{#1}%
+  \global\advance\ACn by 1
+  \global\advance\ACsum by \ACtmp
+  \ifdim\ACtmp>\ACmax \global\ACmax=\ACtmp\fi}
+\let\ACorigchoices=\choices
+\let\endACorigchoices=\endchoices
+\newcommand{\ACboxw}{.5\linewidth}% box width per choice: .25 on one line, .5 in the grid
+\def\AMCanswer#1#2{\makebox[\ACboxw][l]{#1\hspace*{\AMChorizBoxSep}#2}\allowbreak}
+\RenewEnviron{choices}[1][r]{%
+  \global\ACmax=0pt \global\ACsum=0pt \global\ACn=0
+  \begingroup
+    \let\correctchoice=\ACmeasure
+    \let\wrongchoice=\ACmeasure
+    \setbox0=\vbox{\BODY}%
+  \endgroup
+  \setlength{\ACtmp}{\ACmax}\addtolength{\ACtmp}{\AClabel}%
+  \ifdim\ACtmp<.25\linewidth
+    \renewcommand{\ACboxw}{.25\linewidth}%
+    \par\vspace{.6ex}\noindent\begin{choicescustom}[#1]\BODY\end{choicescustom}\par
+  \else
+    \setlength{\ACtmp}{\ACmax}\addtolength{\ACtmp}{\ACgridlabel}%
+    \ifdim\ACtmp<.5\linewidth
+      \renewcommand{\ACboxw}{.5\linewidth}%
+      \par\vspace{.6ex}\noindent\begin{choicescustom}[#1]\BODY\end{choicescustom}\par
+    \else
+      \begin{ACorigchoices}[#1]\BODY\end{ACorigchoices}%
+    \fi
+  \fi}

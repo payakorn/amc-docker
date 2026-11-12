@@ -1,0 +1,46 @@
+% =========================================================
+%  EXAM CONFIGURATION — quiz (the only file to edit per sitting)
+% =========================================================
+%
+% groups.tex in this folder is one line that \input's ../common/exam.tex.
+% That layout loads every file in ../questions/ and then reads this file.
+%
+% Step 1: set the exam info below
+% Step 2: choose the layout switches
+% Step 3: set the \SelectTopic lines (chapters and question counts)
+% Step 4: build (see guide/05-building.md)
+%
+% =========================================================
+
+% --- Exam Info ---
+\newcommand{\ExamTitle}{สอบย่อย - 1/2569}            % Exam title (Thai)
+\newcommand{\ExamTitleEN}{Quiz - 1/2569}             % Exam title (English)
+\newcommand{\CourseCode}{999999}                     % Course ID
+\newcommand{\CourseName}{Sample Course}              % Course name (cover and footer)
+\newcommand{\CourseSection}{001}                     % Section
+\newcommand{\ExamDate}{1 ธันวาคม พ.ศ. 2569}           % Date (Thai)
+\newcommand{\ExamDateEN}{1 December 2026}            % Date (English)
+\newcommand{\ExamDateNum}{01/12/2569}                % Date in numbers (answer sheet)
+\newcommand{\ExamTime}{09.00 - 10.00}                % Time
+\newcommand{\NumCopies}{4}                           % Copies to print. Keep small (2-4)
+                                                     % while testing, the real count to print.
+
+% --- Layout switches (comment out to use the default) ---
+\CMUFonttrue              % CMU font instead of TH Sarabun New
+% \OneColumnQuestionstrue   % question pages in one column
+\ShortChoicesOnLinetrue   % short choices on one line or a 2x2 grid
+\QuestionsOnCoverBacktrue % questions start on the back of the cover
+
+% =========================================================
+%  CHAPTER SELECTION
+% =========================================================
+% \SelectTopic{group}{N}: N random questions from that chapter's group. Every
+% copy gets the SAME N questions, each copy in its own order, with the choices
+% shuffled too. N must not exceed the number of \element blocks in the group:
+%     uv run ../tools/check_questions.py .      prints the live counts.
+% Comment a line out to leave that chapter out.
+% =========================================================
+
+\SelectTopic{ch01_basics}{6}   % of 10
+\SelectTopic{ch02_cloud}{6}    % of 10
+% Total: 12 questions

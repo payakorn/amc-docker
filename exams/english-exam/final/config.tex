@@ -1,0 +1,58 @@
+% =========================================================
+%  EXAM CONFIGURATION -- the only file to edit per sitting
+% =========================================================
+%
+% groups.tex in this folder is one line that \input's ../common/exam-layout.tex.
+% That layout loads every file in ../questions/ and then reads this file.
+%
+% Step 1: set the exam info below
+% Step 2: edit \ExamParts -- one \ExamPart per part, one \DrawGroup or
+%         \DrawAll per chapter inside it
+% Step 3: edit \AnswerSheetLayout -- one \SheetGrid per part
+% Step 4: build (see guide/05-building.md)
+%
+% =========================================================
+
+% --- Exam Info ---
+\newcommand{\ExamTitle}{Final Examination 1/2026}
+\newcommand{\CourseCode}{999999}
+\newcommand{\CourseName}{Sample Course}
+\newcommand{\CourseSection}{701--702}
+\newcommand{\ExamDate}{1 December 2026}
+\newcommand{\ExamDateNum}{01/12/2026}   % short form for the answer-sheet header
+\newcommand{\ExamTime}{09.00 -- 11.00}
+\newcommand{\NumCopies}{4}      % Distinct shuffled papers. 2-4 while testing,
+                                % students + a few spares for the real print.
+
+% 0 = every copy is as long as it needs; N = pad the question pages to page N
+% so all copies have the same length.
+\newcommand{\ExamPadToPage}{0}
+
+% =========================================================
+%  THE PARTS
+% =========================================================
+% \DrawGroup{group}{N}  N random questions, a different draw on every copy.
+% \DrawAll{group}       the whole group, shuffled per copy.
+% \ExamPart[cols]{title}{...}: cols = 1 or 2 (default 2) question columns.
+% N must never exceed the group's size (tools/check_questions.py checks it).
+%
+% Bank sizes:   ch01_data 8   ch02_stats 6
+% =========================================================
+\newcommand{\ExamParts}{%
+  \ExamPart{Part 1 --- Chapter 1: Data Basics}{%
+    \DrawGroup{ch01_data}{6}%
+  }%
+  \ExamPart{Part 2 --- Chapter 2: Statistics}{%
+    \DrawAll{ch02_stats}%
+  }%
+}
+
+% =========================================================
+%  ANSWER SHEET LAYOUT
+% =========================================================
+% \SheetGrid{columns}{which parts}. \InPart{p1} is the first \ExamPart above,
+% \InPart{p2} the second, and so on. Four-choice questions fit 3 columns; questions
+% with more than 5 choices need a 2-column grid of their own.
+\newcommand{\AnswerSheetLayout}{%
+  \SheetGrid{3}{\InPart{p1} || \InPart{p2}}%
+}

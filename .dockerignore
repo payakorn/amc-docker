@@ -6,3 +6,5 @@ README.md
 __pycache__
 *.pyc
 web/.venv
+exams
+ssh

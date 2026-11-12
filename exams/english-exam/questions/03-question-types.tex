@@ -1,0 +1,214 @@
+% ======================================================================
+% Every question type AMC supports, with its scoring (SAMPLE questions)
+% Used by the sitting ../types/. See guide/08-question-types-and-scoring.md.
+%
+% Groups:  types_single  types_multi  types_numeric  types_open  types_shared
+% ======================================================================
+
+% ----------------------------------------------------------------------
+% 1. ONE correct answer: environment "question"
+%    Default score: 1 if right, 0 if wrong, blank or two boxes filled.
+% ----------------------------------------------------------------------
+
+\element{types_single}{
+\begin{question}{TYPE001}
+Which unit is used to measure the size of a file?
+\begin{choices}
+  \correctchoice{Megabyte}
+  \wrongchoice{Megahertz}
+  \wrongchoice{Megapixel}
+  \wrongchoice{Megawatt}
+\end{choices}
+\end{question}
+}
+
+% Worth 2 points instead of 1.
+\element{types_single}{
+\begin{question}{TYPE002}
+\scoring{b=2}
+A table has 12 rows and 5 columns. How many cells does it have? (2 points)
+\begin{choices}
+  \wrongchoice{17}
+  \wrongchoice{50}
+  \correctchoice{60}
+  \wrongchoice{125}
+\end{choices}
+\end{question}
+}
+
+% Wrong answers lose a quarter point; a blank answer scores 0.
+\element{types_single}{
+\begin{question}{TYPE003}
+\scoring{b=1,m=-0.25,v=0}
+Which of these is a primary key most likely to be? (a wrong answer loses 0.25)
+\begin{choices}
+  \correctchoice{A student ID}
+  \wrongchoice{A first name}
+  \wrongchoice{A birth date}
+  \wrongchoice{A home town}
+\end{choices}
+\end{question}
+}
+
+% Choices printed in the order written, not shuffled ("o" = ordered),
+% because the last one refers to the others.
+\element{types_single}{
+\begin{question}{TYPE004}
+Which of these can be stored in a spreadsheet cell?
+\begin{choices}[o]
+  \wrongchoice{A number}
+  \wrongchoice{A date}
+  \wrongchoice{A formula}
+  \correctchoice{All of the above}
+\end{choices}
+\end{question}
+}
+
+% Partial marks for a nearly right choice: \scoring{0.5} right after a
+% choice is the score when that box is the one filled.
+\element{types_single}{
+\begin{question}{TYPE005}
+Which chart suits monthly sales over two years best? (best answer 1, acceptable answer 0.5)
+\begin{choices}
+  \correctchoice{A line chart}
+  \wrongchoice{A column chart}\scoring{0.5}
+  \wrongchoice{A pie chart}
+  \wrongchoice{A scatter plot}
+\end{choices}
+\end{question}
+}
+
+% ----------------------------------------------------------------------
+% 2. MORE THAN ONE correct answer: environment "questionmult"
+%    Students fill every box they think is right. The layout's
+%    "completemulti" option adds a last box, "None of these answers are
+%    correct", which is the right answer if no choice is correct.
+% ----------------------------------------------------------------------
+
+% Default: one point per box handled correctly (filled when right, left
+% empty when wrong). 4 choices = up to 4 points.
+\element{types_multi}{
+\begin{questionmult}{TYPE101}
+Which of these are file formats for images? Select all that apply.
+\begin{choices}
+  \correctchoice{PNG}
+  \correctchoice{JPEG}
+  \wrongchoice{CSV}
+  \wrongchoice{MP3}
+\end{choices}
+\end{questionmult}
+}
+
+% All or nothing: 1 point only if every box is exactly right, otherwise 0.
+\element{types_multi}{
+\begin{questionmult}{TYPE102}
+\scoring{mz=1}
+Which of these are measures of central tendency? Select all that apply. (1 point, all or nothing)
+\begin{choices}
+  \correctchoice{Mean}
+  \correctchoice{Median}
+  \correctchoice{Mode}
+  \wrongchoice{Range}
+\end{choices}
+\end{questionmult}
+}
+
+% 2 points, minus 1 for each box wrong, never below 0.
+\element{types_multi}{
+\begin{questionmult}{TYPE103}
+\scoring{haut=2}
+Which of these are examples of personal data? Select all that apply. (2 points, 1 off per mistake)
+\begin{choices}
+  \correctchoice{A phone number}
+  \correctchoice{An email address}
+  \wrongchoice{The population of a city}
+  \wrongchoice{The average class size}
+\end{choices}
+\end{questionmult}
+}
+
+% Count only the right answers that were filled: +1 per correct box filled,
+% -1 per wrong box filled, a box left empty counts 0, never below 0.
+\element{types_multi}{
+\begin{questionmult}{TYPE104}
+\scoring{formula=NBC-NMC,p=0}
+Which of these are cloud storage services? Select all that apply. (1 point per right answer, 1 off per wrong one)
+\begin{choices}
+  \correctchoice{Google Drive}
+  \correctchoice{OneDrive}
+  \correctchoice{Dropbox}
+  \wrongchoice{Microsoft Excel}
+\end{choices}
+\end{questionmult}
+}
+
+% ----------------------------------------------------------------------
+% 3. NUMBER answer: the student fills one digit per column.
+%    \AMCnumericChoices{answer}{options}. Here: 2 digits, no sign.
+% ----------------------------------------------------------------------
+
+\element{types_numeric}{
+\begin{questionmultx}{TYPE201}
+Five students score 6, 7, 8, 9 and 10. What is the total of their scores?
+\AMCnumericChoices{40}{digits=2,sign=false,scoreexact=1}
+\end{questionmultx}
+}
+
+% A decimal answer: 1 digit before the point and 1 after.
+% Close answers can earn part marks: 1 point exact, 0.5 if within 0.1.
+\element{types_numeric}{
+\begin{questionmultx}{TYPE202}
+The mean of 2, 3 and 4.4 is what number? Give one decimal place.
+\AMCnumericChoices{3.1}{digits=2,decimals=1,sign=false,scoreexact=1,scoreapprox=0.5,approx=1}
+\end{questionmultx}
+}
+
+% ----------------------------------------------------------------------
+% 4. WRITTEN answer, marked by hand: \AMCOpen.
+%    The student writes in the lines on the answer sheet; the marker
+%    fills one of the small boxes (0, 1, 2) next to it, before scanning.
+% ----------------------------------------------------------------------
+
+\element{types_open}{
+\begin{question}{TYPE301}
+In one sentence, explain why a backup copy should be kept in a different place from the original. (2 points, marked by the lecturer)
+\AMCOpen{lines=3}{\wrongchoice[0]{0}\scoring{0}\wrongchoice[1]{1}\scoring{1}\correctchoice[2]{2}\scoring{2}}
+\end{question}
+}
+
+% ----------------------------------------------------------------------
+% 5. SHARED STEM: one table read by several questions.
+%    The table and every question that reads it sit in ONE \element, so
+%    they always print together. Draw this group whole (\DrawAll).
+% ----------------------------------------------------------------------
+
+\element{types_shared}{
+\noindent\textbf{Use this table for the next two questions.}\par\smallskip
+\begin{center}
+\begin{tabular}{lrr}
+  Shop & Mon & Tue \\ \hline
+  A & 10 & 14 \\
+  B & 12 & 8 \\
+\end{tabular}
+\end{center}
+
+\begin{question}{TYPE401}
+Which shop sold more on Tuesday?
+\begin{choices}
+  \correctchoice{Shop A}
+  \wrongchoice{Shop B}
+  \wrongchoice{They sold the same}
+  \wrongchoice{It cannot be told}
+\end{choices}
+\end{question}
+
+\begin{question}{TYPE402}
+How many items did shop B sell over the two days?
+\begin{choices}
+  \wrongchoice{8}
+  \wrongchoice{12}
+  \correctchoice{20}
+  \wrongchoice{24}
+\end{choices}
+\end{question}
+}

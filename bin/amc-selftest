@@ -143,7 +143,7 @@ projects=${AMC_PROJECTS_DIR:-$repo/exam}
 if [ -d "$repo" ] && [ -n "$(ls -A "$repo" 2>/dev/null)" ]; then
   ok "exam repo mounted at $repo"
 else
-  bad "$repo is missing or empty" "check EXAM_REPO in .env — it must be an absolute host path"
+  bad "$repo is missing or empty" "check EXAM_REPO in .env (default ./exams)"
 fi
 
 if git -C "$repo" rev-parse --git-dir >/dev/null 2>&1; then

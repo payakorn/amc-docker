@@ -1,0 +1,51 @@
+% =========================================================
+%  SAMPLE SITTING: every question type and scoring rule
+%  (see guide/08-question-types-and-scoring.md)
+% =========================================================
+\newcommand{\ExamTitle}{Question Types Demo}
+\newcommand{\CourseCode}{999999}
+\newcommand{\CourseName}{Sample Course}
+\newcommand{\CourseSection}{001}
+\newcommand{\ExamDate}{1 December 2026}
+\newcommand{\ExamDateNum}{01/12/2026}
+\newcommand{\ExamTime}{09.00 -- 10.00}
+\newcommand{\NumCopies}{2}
+\newcommand{\ExamPadToPage}{0}
+
+% Default scoring for the whole exam. Must come before the questions are
+% printed, so it sits here. A question's own \scoring{...} overrides it.
+%   one-answer questions:   1 right, 0 wrong, 0 blank, 0 if two boxes filled
+%   several-answer questions: AMC's own default (one point per box right)
+\scoringDefaultS{b=1,m=0,v=0,e=0}
+
+% Bank sizes: types_single 5  types_multi 4  types_numeric 2  types_open 1
+%             types_shared 1 block (2 questions)  types_rich 8
+%             types_random_num 1
+\newcommand{\ExamParts}{%
+  \ExamPart{Part 1 --- One correct answer}{%
+    \DrawAll{types_single}%
+    \DrawAll{types_shared}%
+  }%
+  \ExamPart{Part 2 --- Formulas, charts and diagrams}{%
+    \DrawAll{types_rich}%
+  }%
+  \ExamPart{Part 3 --- Select all that apply}{%
+    \DrawAll{types_multi}%
+  }%
+  \ExamPart{Part 4 --- Number answers}{%
+    \DrawAll{types_numeric}%
+    \DrawAll{types_random_num}%
+  }%
+  \ExamPart[1]{Part 5 --- Written answer}{%
+    \DrawAll{types_open}%
+  }%
+}
+
+% Parts 1-3 in 3 columns of bubbles. Each number answer is a narrow
+% column of digits, so 5 fit side by side; \SheetGridTitled puts the part
+% heading above them, full width. The written answer needs the full width.
+\newcommand{\AnswerSheetLayout}{%
+  \SheetGrid{3}{\InPart{p1} || \InPart{p2} || \InPart{p3}}%
+  \SheetGridTitled{5}{\InPart{p4}}%
+  \SheetGrid{1}{\InPart{p5}}%
+}

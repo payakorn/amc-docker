@@ -1,0 +1,562 @@
+\documentclass[a4paper, twoside]{article}
+
+%%% 1. Setup for English text (XeLaTeX + fontspec) %%%
+\usepackage{fontspec}
+\usepackage{amsmath}              % \text{...} inside formulas printed with questions
+\usepackage{tikz}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18,
+  % Years and counts on an axis are read as numbers, not money -- without this
+  % pgfplots prints tick labels as "2,010" and "8,000".
+  /pgf/number format/1000 sep={}}
+\usepgfplotslibrary{statistics}   % boxplot prepared={...} in the Ch.7/8 questions
+\usetikzlibrary{positioning}      % the Ch.4 CRISP-DM flow diagram
+\usepackage{multicol}
+\usepackage{needspace}            % a part heading never sits alone at a page foot
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage[most]{tcolorbox}      % the cover and answer-sheet boxes
+
+% --- FONT SETUP ---
+% CMU, the university font (fonts and their license, CMU-FONT-licence-th.pdf,
+% are in ../fonts/CMU/). Light for body
+% text and Regular for bold: CMU Regular as body text prints almost bold.
+% Needs XeLaTeX (set the engine to xelatex in AMC).
+\setmainfont[
+    Path = ../fonts/CMU/,
+    Extension = .ttf,
+    UprightFont = *-Light,
+    BoldFont = *-Regular,
+    ItalicFont = *-Italic,
+    BoldItalicFont = *-BoldItalic,
+    Scale = 1.0
+]{CMU}
+
+\linespread{1.05}
+\tolerance=5000
+\emergencystretch=20pt
+
+% asbox wraps each answer-sheet item (its number label + its choice boxes /
+% digit-grid) in one atomic \vbox during \AMCform / \AMCformFilter replay --
+% without it, multicols can break a column right between a question's number
+% and its box.
+\usepackage[box,completemulti,separateanswersheet,asbox]{automultiplechoice}
+% AMC's per-page ID/page/check code boxes default to 6 bits (max value 63).
+% Long exams easily run past 63 pages, which raises "Package automultiplechoice
+% Error: Too low AMC@NCB value". Widen both up front so it never bites later.
+\makeatletter
+\def\AMC@NCBpage{9}
+\def\AMC@NCBcheck{9}
+\makeatother
+\usepackage{totcount}
+\regtotcounter{AMCquestionaff}   % lets the cover print \total{AMCquestionaff} -- no hand-kept question count
+
+% Group mode is set before any \element calls -- AMC locks in a group's mode
+% (via \nouveaugroupe) the first time that group is touched, which happens
+% when the question banks below are \input.
+\setdefaultgroupmode{withoutreplacement}
+
+% =========================================================
+%  THIS FILE IS STRUCTURAL -- DO NOT EDIT PER EXAM.
+%  Edit config.tex instead (title, date, parts, draw counts).
+%
+%  ICDI English exam template: the exam is split into parts
+%  (\ExamPart), each part's headings are repeated on the separate answer
+%  sheet, and each part gets its own block of bubbles (\SheetGrid).
+% =========================================================
+
+% =========================================================
+%  GROUP-INSERTION MACROS (DO NOT EDIT)
+% =========================================================
+% \DrawGroup{group}{N} -> draws N questions at random from that group's
+%   bank, in random order, freshly for every printed copy.
+% \DrawAll{group}      -> draws the whole group (still shuffled).
+% N must be <= the number of questions authored in the group (see the
+% bank-size table in config.tex). ONE QUESTION PER \element -- AMC's N counts
+% \element blocks, not questions.
+\newcommand{\DrawGroup}[2]{\insertgroup[#2]{#1}}
+\newcommand{\DrawAll}[1]{\insertgroup{#1}}
+\newcommand{\InsertFullGroup}[1]{\DrawAll{#1}}
+
+% =========================================================
+%  PARTS AND CHAPTER SECTIONS (DO NOT EDIT)
+% =========================================================
+\newcommand{\ExamSectionFormat}[1]{%
+  \par\addvspace{0.5\baselineskip}%
+  \penalty-200%              % prefer a column break BEFORE a heading
+  \noindent\begin{minipage}{\linewidth}%
+    \centering\small\bfseries #1\par
+    \vspace{0.15\baselineskip}%
+    \rule{\linewidth}{0.4pt}%
+  \end{minipage}%
+  \par\nobreak\vspace{0.25\baselineskip}\nobreak%
+}
+\newcommand{\ExamPartFormat}[1]{%
+  \par\addvspace{2.5\baselineskip}%
+  \Needspace*{0.4\textheight}% heading + the first question, which multicols cannot split
+  \noindent\begin{minipage}{\linewidth}%
+    \centering\large\bfseries #1\par
+    \vspace{0.2\baselineskip}%
+    \rule{\linewidth}{1pt}%
+  \end{minipage}%
+  \par\nobreak\vspace{0.3\baselineskip}\nobreak%
+}
+\newcommand{\ExamPartFormatSheet}[1]{%
+  \par\addvspace{0.6\baselineskip}%
+  \penalty-500%
+  \noindent\begin{minipage}{\linewidth}%
+    \centering\bfseries #1\par
+    \vspace{0.15\baselineskip}%
+    \rule{\linewidth}{1pt}%
+  \end{minipage}%
+  \par\nobreak\vspace{0.3\baselineskip}\nobreak%
+}
+% Every recorded item -- each question and each heading -- is stamped with the
+% part it belongs to (p1, p2, ...), so the answer sheet can lay each part's
+% boxes out in its own grid.
+\newcounter{ExamPartNo}
+\def\ExamPartTag{p\arabic{ExamPartNo}}
+\makeatletter
+% AMC overwrites the category of a number question ("numeric") and a written
+% question ("open"), so the part is also stored in a variable of its own,
+% \ExamItemPart, which \InPart{p3} tests. Use \InPart in \SheetGrid filters.
+\def\ExamItemPart{}
+\newcommand{\Exam@mem@part}{%
+  \AMC@if@separate@question{%
+    \edef\Exam@tmp{\noexpand\AMC@mem@addvar{\noexpand\def\noexpand\ExamItemPart{\ExamPartTag}%
+      \noexpand\def\noexpand\ExamItemHead{0}}}%
+    \Exam@tmp}}
+% Marks the item just recorded as a heading (\InHeading tests it).
+\def\ExamItemHead{0}
+\newcommand{\Exam@mem@head}{%
+  \AMC@if@separate@question{\AMC@mem@addvar{\def\ExamItemHead{1}}}}
+\let\AMCorig@mem@openQuestion\AMC@mem@openQuestion
+\renewcommand{\AMC@mem@openQuestion}{%
+  \AMCorig@mem@openQuestion
+  \AMC@if@separate@question{\AMC@mem@category{\ExamPartTag}}%
+  \Exam@mem@part
+}
+\newcommand{\ExamSection}[1]{%
+  \ExamSectionFormat{#1}%
+  \AMC@mem@addsingle@ifneeded{\ExamSectionFormat{#1}}{\ExamPartTag}%
+  \Exam@mem@part\Exam@mem@head
+}
+% \ChoiceColumns{n} -- typeset each question's CHOICES in n columns for the
+% rest of the current part (default 1; reset by every \ExamPart). Only for a
+% part typeset in ONE column (\ExamPart[1]): multicols cannot nest.
+\newcount\Exam@choicecols \Exam@choicecols=1
+\newcommand{\ChoiceColumns}[1]{\Exam@choicecols=#1\relax}
+\expandafter\let\csname Exam@choices@body\expandafter\endcsname
+                \csname\string\choices\endcsname
+\let\Exam@endchoices\endchoices
+\renewenvironment{choices}[1][r]{%
+  \ifnum\Exam@choicecols>\@ne
+    \setlength{\multicolsep}{0pt}%
+    \setlength{\premulticols}{0pt}%
+    \setlength{\postmulticols}{0pt}%
+    \setlength{\columnsep}{1em}%
+    \begin{multicols}{\Exam@choicecols}\raggedcolumns
+  \fi
+  \csname Exam@choices@body\endcsname[#1]%
+}{%
+  \Exam@endchoices
+  \ifnum\Exam@choicecols>\@ne\end{multicols}\fi
+}
+% \ExamPart[cols]{title}{body} -- the body is the part's \ExamSection /
+% \DrawGroup calls, written in config.tex.
+\newcommand{\ExamPart}[3][2]{%
+  \stepcounter{ExamPartNo}%
+  \ChoiceColumns{1}%
+  \ExamPartFormat{#2}%
+  \AMC@mem@addsingle@ifneeded{\ExamPartFormatSheet{#2}}{\ExamPartTag}%
+  \Exam@mem@part\Exam@mem@head
+  \begin{center} \small (one correct answer per question, unless the question says ``select all that apply'') \end{center}
+  \vspace{0.2cm}%
+  \setlength{\columnsep}{.4cm}%
+  \ifnum#1=1
+    #3%
+  \else
+    \begin{multicols}{#1}%
+      \raggedcolumns
+      #3%
+    \end{multicols}%
+  \fi
+}
+\makeatother
+\ExplSyntaxOn
+\cs_new:Npn \exam_in_part_p:n #1 { \str_if_eq_p:on { \ExamItemPart } { #1 } }
+\cs_new_eq:NN \InPart \exam_in_part_p:n
+\cs_new:Npn \exam_in_heading_p: { \str_if_eq_p:on { \ExamItemHead } { 1 } }
+\cs_new_eq:NN \InHeading \exam_in_heading_p:
+\ExplSyntaxOff
+
+% \SheetGrid{ncols}{filter} -- one block of the answer sheet, replaying just
+% the items whose category matches. Used by \AnswerSheetLayout in config.tex.
+\makeatletter
+\newif\ifExam@firstgrid \Exam@firstgridtrue
+\newcommand{\SheetGrid}[2]{%
+  \ifExam@firstgrid \Exam@firstgridfalse \else \fi
+  \setlength{\columnsep}{.5cm}%
+  \ifnum#1=1
+    \AMCformFilter{#2}%       % full width: digit grids, written answers
+  \else
+    \begin{multicols}{#1}%
+      \AMCformFilter{#2}%
+    \end{multicols}%
+  \fi
+}
+% \SheetGridTitled[space]{ncols}{filter} -- like \SheetGrid, but the part
+% headings go full width above the grid, and the grid starts on a new page
+% unless [space] (default 8cm) is left. For narrow items such as number
+% answers in columns of digits, set 4-6 across.
+\newcommand{\SheetGridTitled}[3][8cm]{%
+  \par\Needspace*{#1}%
+  \AMCformFilter{(#3) && \InHeading}%
+  \setlength{\columnsep}{.5cm}%
+  \begin{multicols}{#2}%
+    \AMCformFilter{(#3) && !\InHeading}%
+  \end{multicols}%
+}
+% Per-copy state, reset together at the top of every copy.
+\newcommand{\ExamResetCopy}{\setcounter{ExamPartNo}{0}\Exam@firstgridtrue}
+\makeatother
+\newcommand{\PartASection}[1]{\ExamSection{#1}}
+\newcommand{\PartBSection}[1]{\ExamSection{#1}}
+
+% =========================================================
+%  LOAD ALL QUESTION BANKS (must come before config.tex)
+% =========================================================
+% Shared question bank lives one level up, in exam/questions/ -- every
+% exam sitting (midterm, final, ...) draws from the same files.
+% One line per chapter file. Add a line when you add a file to questions/.
+\input{../questions/01-data-basics.tex}
+\input{../questions/02-statistics.tex}
+\input{../questions/03-question-types.tex}
+\input{../questions/04-rich-questions.tex}
+
+% =========================================================
+%  LOAD EXAM CONFIGURATION
+% =========================================================
+\input{config.tex}
+% Last page the question pages are padded to; config.tex may set it.
+\providecommand{\ExamPadToPage}{6}
+
+% --- AMC FORMATTING ---
+\def\AMCbeginQuestion#1#2{\par\noindent\textbf{#1.}~#2}
+\def\AMCformQuestion#1{\vspace{-0.15cm}\par\noindent\makebox[1.9em][r]{\textbf{#1.}}}
+
+% --- AMC BOX STYLE ---
+% Absolute sizes, so the bubbles and the ID grid keep
+% the same geometry whatever main font is loaded; \IDWriteBoxes below depends
+% on the 7.29 mm column pitch this gives.
+\AMCboxStyle{shape=oval,size=12.75pt,down=2.04pt,rule=.5pt,outsidesep=1.5pt,color=black}
+\AMCcodeHspace=7.5pt
+\AMCcodeVspace=7.5pt
+\AMCformHSpace=4.5pt
+
+% Numeric digit-grid frame, if a sitting ever draws a numeric group: black and
+% thin like the oval bubbles.
+\makeatletter
+\def\AMCncol@Border{black}
+\def\AMCncol@BorderWidth{0.5pt}
+\makeatother
+% Each digit is a column of 0-9 bubbles, read top to bottom, like the student
+% ID grid. A question can still ask for rows with vertical=false.
+\AMCnumericOpts{vertical=true}
+
+% --- COVER PAGE SHADES (black and white only; the exam is printed in mono) ---
+\definecolor{coverDark}{gray}{0}
+\definecolor{coverGray}{gray}{0.3}
+\definecolor{coverRule}{gray}{0.55}
+\definecolor{coverLight}{gray}{1}   % no background fills: saves toner
+\newcommand{\CoverCell}[2]{%
+    \begin{tabular}{@{}c@{}}{\small\color{coverGray} #1}\\[0.4ex]{\large\bfseries #2}\end{tabular}}
+\newcommand{\AnsCell}[2]{%
+    \begin{tabular}{@{}c@{}}{\footnotesize\color{coverGray} #1}\\[0.2ex]{\normalsize\bfseries #2}\end{tabular}}
+\providecommand{\ExamDateNum}{\ExamDate}
+\providecommand{\CourseName}{Course Name}   % override in config.tex if needed
+
+% --- QUESTION PAGES ---
+% Inter-question gap left at AMC's default; a larger gap makes some shuffles
+% spill onto an extra page.
+\setlength{\columnseprule}{0.4pt}
+\renewcommand{\columnseprulecolor}{\color{coverRule}}
+
+% Footer on the question pages only (not the cover, not the answer sheet),
+% centered: course | exam | page. AMC's page style owns the header/footer
+% slots (corner marks), so the footer is drawn in the shipout foreground
+% layer instead and never touches the marks.
+\newif\ifExamFooter
+\AddToHook{shipout/foreground}{%
+  \ifExamFooter\ifnum\value{page}>1
+    \put(\dimexpr 1in+\oddsidemargin\relax,-\dimexpr\paperheight-1.7cm\relax){%
+      \makebox[\textwidth][c]{\small\color{coverGray}%
+        \CourseCode\ \CourseName\ \ \textbar\ \ \ExamTitle\ \ \textbar\ \ Page \thepage}}%
+  \fi\fi}
+
+% Nine write-in boxes, one above each column of the \AMCcode{id}{9} grid.
+% The grid's column pitch is 7.29 mm and each circle is 4.66 mm wide, so each
+% box is centered 1.57 mm into its 7.29 mm cell; centering this picture and
+% the grid in the same box lines them up.
+\newcommand{\IDWriteBoxes}{%
+  \begin{tikzpicture}
+    \useasboundingbox (0,0) rectangle (9*7.29mm, 7.5mm);
+    \foreach \i in {0,...,8}
+      \draw[coverDark, line width=0.5pt, rounded corners=0.6mm]
+        (\i*7.29mm+1.57mm-2.9mm, 0) rectangle ++(5.8mm, 7.5mm);
+  \end{tikzpicture}}
+
+% Boxed section title used on the answer sheet (same look as the cover's boxes).
+\tcbset{examtitled/.style={enhanced, colback=white, colframe=coverDark, boxrule=0.5pt, arc=2mm,
+    left=3mm, right=3mm, top=3mm, bottom=2mm, fonttitle=\small\bfseries,
+    coltitle=coverDark, colbacktitle=white,
+    attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+    boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}}}
+
+% Framed answer-sheet boxes (name, student ID). AMC records every bubble and
+% zone position with \pdfsavepos, which cannot see the coordinate shift
+% tcolorbox's enhanced skin applies to its content, so an \AMCcode or
+% \namefield placed inside the box is detected ~4 mm off in the scan. The
+% content is therefore typeset into a saved box *outside* the tcolorbox, and
+% the empty frame is drawn first, behind it.
+% #1 title, #2 extra space below the content, #3 content.
+\newsavebox{\SheetBoxContent}
+\newcommand{\SheetBox}[3]{%
+  \sbox{\SheetBoxContent}{%
+    \begin{minipage}[t]{\dimexpr\linewidth-6mm-1pt\relax}#3\end{minipage}}%
+  \par\noindent
+  \begin{tcolorbox}[examtitled, title={#1},
+      height=\dimexpr\ht\SheetBoxContent+\dp\SheetBoxContent+5mm+#2+1pt\relax]
+  \end{tcolorbox}%
+  \par\nointerlineskip
+  \vspace{-\dimexpr\ht\SheetBoxContent+\dp\SheetBoxContent+2mm+#2+0.5pt\relax}%
+  \noindent\hspace*{\dimexpr3mm+0.5pt\relax}\usebox{\SheetBoxContent}\par
+  \vspace{\dimexpr2mm+#2\relax}}
+
+\newcommand{\IDSheetBox}{%
+  \SheetBox{Student ID}{3mm}{%
+    \centering\vspace{0.5mm}
+    {\footnotesize Write your ID in the boxes, then fill the circles below.}\\[1mm]
+    \IDWriteBoxes\\[1.2mm]
+    \AMCcode{id}{9}}}
+
+\newcommand{\NameSheetBox}{%
+  \SheetBox{First name and last name}{2mm}{%
+    \namefield{\begin{minipage}{\linewidth}
+        \vspace{5mm}
+        \dotfill\par
+        \vspace{1mm}
+    \end{minipage}}}}
+
+\begin{document}
+% Fixed seed for questions whose numbers are random (\pgfmathrandominteger):
+% every build, and so the exam, the answer key and the marking, gets the same
+% numbers. Each copy still gets its own. Change the number for a new set.
+\pgfmathsetseed{2026}
+\raggedbottom
+
+% Start of AMC exam generation -- \NumCopies is set in config.tex.
+\onecopy{\NumCopies}{
+
+    % =========================================================
+    % 1. EXAM COVER PAGE
+    % =========================================================
+    \global\ExamFootertrue
+
+    % --- Header: college logo and name ---
+    \noindent
+    \begin{minipage}[c]{2.3cm}
+        \includegraphics[width=2.3cm]{../logos/logo-ICDI-gray.png}
+    \end{minipage}\hspace{0.4cm}%
+    \begin{minipage}[c]{\dimexpr\linewidth-2.7cm\relax}
+        {\Large\bfseries International College of Digital Innovation}\\[-0.2ex]
+        {\color{coverGray}Chiang Mai University}
+    \end{minipage}
+
+    \vspace{0.5cm}
+
+    % --- Title band ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, arc=2mm,
+        boxrule=0.8pt, left=6mm, right=6mm, top=2.5mm, bottom=2.5mm, halign=center]
+        {\fontsize{24}{28}\selectfont\bfseries \ExamTitle}\\[1.2ex]
+        {\large \CourseCode\ \ \CourseName}
+    \end{tcolorbox}
+
+    \vspace{0.3cm}
+
+    % --- Exam facts: five cells ---
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverRule, boxrule=0.5pt,
+        arc=2mm, left=3mm, right=3mm, top=1.2mm, bottom=1.6mm]
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccc@{}}
+            \CoverCell{Course}{\CourseCode} &
+            \CoverCell{Section}{\CourseSection} &
+            \CoverCell{Date}{\ExamDate} &
+            \CoverCell{Time}{\ExamTime} &
+            \CoverCell{No.\ of questions}{\total{AMCquestionaff}}
+        \end{tabular*}
+    \end{tcolorbox}
+
+    \vspace{0.3cm}
+
+    % --- Student details ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, boxrule=0.5pt, arc=2mm,
+        left=4mm, right=4mm, top=3mm, bottom=3mm,
+        title={\bfseries Student information}, fonttitle=\normalsize,
+        coltitle=coverDark, colbacktitle=white, attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+        boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}]
+        \vspace{1.5mm}
+        First name \dotfill\ Last name \dotfill\par
+        \vspace{3mm}
+        \noindent Student ID\enspace
+        \begin{tikzpicture}[baseline=1.5mm]
+            \foreach \i in {0,...,8} {\draw[coverDark, line width=0.5pt] (\i*0.62,0) rectangle ++(0.56,0.62);}
+        \end{tikzpicture}%
+
+    \end{tcolorbox}
+
+    \vspace{0.2cm}
+
+    % --- Instructions ---
+    % Standard exam-room instructions, with the question count computed (\total{AMCquestionaff}) so it can never drift
+    % out of step with the draw counts in config.tex.
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverRule, boxrule=0.5pt, arc=2mm,
+        left=3mm, right=4mm, top=3mm, bottom=2mm,
+        title={\bfseries Instructions}, fonttitle=\normalsize,
+        coltitle=coverDark, colbacktitle=white, attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+        boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}]
+        \vspace{1mm}
+        \begin{enumerate}\setlength{\itemsep}{2pt}\setlength{\parskip}{0pt}
+            \item This booklet contains \total{AMCquestionaff} multiple-choice questions.
+            \item Select only one best answer for each question, unless the question
+                  says ``select all that apply''.
+            \item \textbf{Detach the answer sheet from the back of this booklet.} Write
+                  your first name, last name, and student ID clearly, and fill in the
+                  Student ID bubbles completely before answering.
+            \item Write your first name, last name, and student ID clearly on this cover
+                  page.
+            \item Before the exam begins, the proctor will announce the course name and
+                  examination instructions to confirm that you have the correct exam.
+            \item This is a closed-book examination. Use only the materials permitted by
+                  the examination requirements and the proctor's instructions.
+            \item Follow the proctor's instructions strictly at all times.
+            \item Strictly follow the Chiang Mai University Regulations on Student
+                  Examinations B.E. 2564 (2021).
+        \end{enumerate}
+    \end{tcolorbox}
+
+    \vspace{0.15cm}
+
+    % --- Integrity warning ---
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverDark, boxrule=0pt,
+        leftrule=0.6mm, sharp corners, left=4mm, right=4mm, top=1.5mm, bottom=1.5mm]
+        \textbf{Warning:} cheating, or any act of academic dishonesty during the
+        examination, \textbf{is a serious disciplinary offense}. Any student found
+        cheating \textbf{will be considered for a grade of F or U in this course}.
+    \end{tcolorbox}
+
+    \vspace{0.4cm}
+
+    % --- Agreement ---
+    \begin{center}
+        \textbf{By taking this examination, you confirm that you have read and
+        will follow the instructions above.}
+    \end{center}
+
+    \vfill
+
+    \clearpage
+
+    % =========================================================
+    % 2. QUESTIONS SECTION
+    % =========================================================
+    % The parts, the chapters inside each part, and the draw counts all come
+    % from config.tex -- see \ExamParts there. Reset the part counter for
+    % EVERY copy, or the tags p1, p2, ... keep counting up.
+    \ExamResetCopy
+    \ExamParts
+
+    % Optionally pad the question pages so every copy has the same page
+    % count. AMC resets the page counter at every copy.
+    % The target page comes from \ExamPadToPage in config.tex (default 6).
+    \clearpage
+    \loop\ifnum\value{page}<\ExamPadToPage\relax \null\clearpage\repeat
+
+    \cleardoublepage
+
+    % =========================================================
+    % 3. ANSWER SHEET SECTION
+    % =========================================================
+    \AMCformBegin
+    \global\ExamFooterfalse
+
+    % --- Title band: sheet name, then the exam on the next line ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, arc=2mm, boxrule=0.8pt,
+        left=5mm, right=5mm, top=1mm, bottom=1.2mm]
+        {\fontsize{16}{19}\selectfont\bfseries ANSWER SHEET}\\[-0.2ex]
+        {\normalsize\bfseries \ExamTitle}\hspace{0.5em}{\normalsize\color{coverGray}\CourseCode\ \CourseName}
+    \end{tcolorbox}
+
+    \vspace{-0.1cm}
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverRule, boxrule=0.5pt,
+        arc=2mm, left=3mm, right=3mm, top=0.8mm, bottom=1.2mm]
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccc@{}}
+            \AnsCell{Course}{\CourseCode} &
+            \AnsCell{Section}{\CourseSection} &
+            \AnsCell{Date}{\ExamDateNum} &
+            \AnsCell{Time}{\ExamTime} &
+            \AnsCell{No.\ of questions}{\total{AMCquestionaff}}
+        \end{tabular*}
+    \end{tcolorbox}
+
+    \vspace{0.15cm}
+
+    % --- Left: name, then instructions. Right: student ID grid. ---
+    \noindent
+    \begin{minipage}[t]{0.47\linewidth}
+        \vspace{0pt}
+        \NameSheetBox
+
+        \vspace{0.1cm}
+        \begin{tcolorbox}[examtitled, title={Instructions}]
+            \vspace{0.5mm}\raggedright\small
+            \textbf{Pull this answer sheet (the last pages) out of the booklet.}
+
+            \vspace{1.5mm}
+            Use a pen or a 2B pencil. Fill each circle \textbf{completely}.
+
+            \vspace{2mm}
+            \centering
+            \begin{tabular}{c@{\hspace{1.2cm}}c}
+                \begin{tikzpicture}[baseline=-0.5ex]
+                    \fill (0,0) circle (0.2);
+                \end{tikzpicture} &
+                \begin{tikzpicture}[baseline=-0.5ex]
+                    \draw (0,0) circle (0.2);
+                    \draw[line width=0.6pt] (-0.14,0.14) -- (0.14,-0.14);
+                    \draw[line width=0.6pt] (-0.14,-0.14) -- (0.14,0.14);
+                \end{tikzpicture} \\[0.8ex]
+                \textbf{Valid} & \textbf{Invalid}
+            \end{tabular}
+        \end{tcolorbox}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.5\linewidth}
+        \vspace{0pt}
+        \IDSheetBox
+    \end{minipage}
+
+    \vspace{0.25cm}
+    {\color{coverDark}\hrule height 0.8pt}
+    \vspace{0.1cm}
+
+    % The grids, and how many columns each gets, are declared in config.tex --
+    % see \AnswerSheetLayout there. Each \SheetGrid replays only the items
+    % tagged with its part, headings included.
+    \AnswerSheetLayout
+
+    % Pad every copy to an even number of pages, or duplex printing puts the
+    % next copy on the back of this one's last page.
+    \AMCcleardoublepage
+
+}
+
+\end{document}

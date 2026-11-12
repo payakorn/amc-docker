@@ -54,12 +54,12 @@ services:
       GIT_USER_EMAIL: ${GIT_USER_EMAIL:-}
 
     volumes:
-      # The exam repository, live: edits and compiled PDFs land straight in the
+      # The exam folder (./exams by default), live: edits and compiled PDFs land straight in the
       # working tree on the Mac, and git inside the container is the same repo.
-      - ${EXAM_REPO:?set EXAM_REPO in .env — see .env.example}:/work/repo
+      - ${EXAM_REPO:-./exams}:/work/repo
       # SSH keys for pushing to GitHub, read-only (copied and re-permissioned
       # inside the container by the entrypoint).
-      - ${SSH_DIR:?set SSH_DIR in .env — an absolute path, Compose does not expand ~}:/ssh-host:ro
+      - ${SSH_DIR:-./ssh}:/ssh-host:ro
       # Drop extra .ttf/.otf here (e.g. TH Sarabun New) to make them available
       # to XeLaTeX and to the desktop.
       - ./fonts:/usr/local/share/fonts/custom:ro

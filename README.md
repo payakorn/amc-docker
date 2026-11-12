@@ -45,34 +45,44 @@ runs natively on Apple Silicon — no emulation, no `--platform` flag, no Rosett
 **1. Install a container runtime.** [OrbStack](https://orbstack.dev) is the
 lighter, faster choice on Apple Silicon; Docker Desktop works identically.
 
-**2. Clone this repo and the exam repo.**
+**2. Clone and start.** Nothing to configure: `.env` is ready, and
+`exams/` holds two working example exams.
 
 ```bash
 git clone git@github.com:payakorn/amc-docker.git ~/projects/amc-docker
-git clone git@github.com:payakorn/888102.git    ~/projects/888102
-```
-
-**3. Configure.**
-
-```bash
 cd ~/projects/amc-docker
-cp .env.example .env
-$EDITOR .env          # set EXAM_REPO, SSH_DIR, VNC_PASSWORD
+docker compose up -d
 ```
 
-`EXAM_REPO` must be an absolute path (`/Users/payakorn/projects/888102`) —
-Compose does not expand `~`.
-
-**4. Build and start.**
-
-```bash
-docker compose up -d --build
-```
-
-The first build pulls TeX Live and downloads roughly 2–3 GB; expect 10–20
+The first start builds the image: TeX Live and AMC, roughly 2–3 GB, 10–20
 minutes. Later starts take a couple of seconds.
 
-**5. Open it.** <http://localhost:6090/> for the web interface. The desktop is
+**3. Build an example exam.**
+
+```bash
+docker exec amc sh /work/repo/build-sitting.sh /work/repo/thai-exam/quiz
+docker exec amc sh /work/repo/build-sitting.sh /work/repo/english-exam/final
+```
+
+The PDFs land in `exams/thai-exam/quiz/` and `exams/english-exam/final/`
+(`DOC-sujet.pdf` is the exam). Both are also in the web interface's project list.
+
+| Example | What it shows |
+|---|---|
+| `exams/thai-exam/quiz` | Thai cover page, N random questions per chapter, short choices in a 2×2 grid |
+| `exams/english-exam/final` | Labelled parts, repeated on the answer sheet; a table and a chart in questions |
+| `exams/english-exam/types` | Every AMC question type with its own scoring rule, formulas, diagrams, per-copy random numbers |
+
+The questions are made-up samples and the student lists are fake.
+
+**4. Your own exams (optional).** Set `EXAM_REPO` in `.env` to an absolute path
+(`/Users/<you>/projects`, Compose does not expand `~`) and run `docker compose
+up -d` again. To push from inside the container, also set `SSH_DIR`,
+`GIT_USER_NAME` and `GIT_USER_EMAIL`. `.env` is tracked, so a personal value
+shows up in `git status`; keep it out of commits with
+`git update-index --skip-worktree .env`.
+
+**Open it.** <http://localhost:6090/> for the web interface. The desktop is
 at <http://localhost:6091/>, password `VNC_PASSWORD`, and the web interface's
 **Desktop ↗** button opens it for you.
 
@@ -88,14 +98,14 @@ default). Differences from the Mac steps above:
 
 ```powershell
 git clone -c core.autocrlf=false https://github.com/payakorn/amc-docker.git
-cd amc-docker; copy .env.example .env; notepad .env
-docker compose up -d --build
+cd amc-docker
+docker compose up -d
 ```
 
 - `-c core.autocrlf=false` keeps the scripts' Linux line endings (`.gitattributes` enforces
   this too); with Windows endings the container fails to start.
-- In `.env`, write paths with forward slashes: `EXAM_REPO=C:/Users/<you>/projects`,
-  `SSH_DIR=C:/Users/<you>/.ssh`.
+- If you point `.env` at your own folders, write paths with forward slashes:
+  `EXAM_REPO=C:/Users/<you>/projects`, `SSH_DIR=C:/Users/<you>/.ssh`.
 - The desktop is at <http://localhost:6091/vnc.html> as on the Mac; for a separate window use
   TigerVNC or RealVNC Viewer on `localhost:6092` instead of Screen Sharing.
 - `docker exec amc …` and `docker compose exec amc …` work unchanged in PowerShell.
@@ -274,12 +284,13 @@ answer sheet before 250 students sit the paper.
 
 ## Configuration
 
-Everything lives in `.env`; see `.env.example` for the full list with comments.
+Everything lives in `.env`, which works as shipped; it has the full list with comments.
 The ones that matter most:
 
 | Variable | Purpose |
 |---|---|
-| `EXAM_REPO` | Absolute path to the exam repo on the Mac. Required. |
+| `EXAM_REPO` | Folder mounted at `/work/repo`. Default `./exams` (the examples); an absolute path for your own exams. |
+| `SSH_DIR` | SSH keys for `git push` from the container. Default `./ssh` (empty). |
 | `AMC_PROJECTS_SUBDIR` | Folder inside it holding projects (`exam`, or `.`). |
 | `VNC_PASSWORD` | Password for the desktop and Screen Sharing. Change it. |
 | `VNC_GEOMETRY` | Desktop size, e.g. `1920x1200`. |

@@ -1,0 +1,422 @@
+% =========================================================
+%  ICDI Thai exam template, shared by every sitting folder
+% =========================================================
+% Each sitting folder (beforemidterm, midterm, prefinal, final) has a one-line
+% groups.tex that \input's this file, so AMC still compiles <sitting>/groups.tex
+% and every relative path below resolves from the sitting folder. What differs
+% between sittings lives in <sitting>/config.tex: exam facts, \SelectTopic
+% lines and the layout switches declared below. Edit this file once; never copy
+% it into a sitting folder.
+\documentclass[a4paper, twoside]{article}
+
+% =========================================================
+%  LAYOUT SWITCHES (set in config.tex with \<name>true)
+% =========================================================
+% Defaults give the midterm layout: TH Sarabun New, two-column questions, the
+% back of the cover left blank, one choice per line.
+\newif\ifCMUFont            % CMU font (../fonts/CMU) instead of TH Sarabun New
+\newif\ifOneColumnQuestions % question pages in one column instead of two
+\newif\ifShortChoicesOnLine % short choices on one line or in a 2x2 grid
+\newif\ifQuestionsOnCoverBack % questions start on the back of the cover (saves a page per copy)
+
+% =========================================================
+%  📝 READ THE SITTING'S config.tex FIRST
+% =========================================================
+% config.tex sets the exam facts and switches, which the font and the packages
+% below need, so it is read before anything else. Its \SelectTopic lines are
+% only queued here and run after the question banks are loaded.
+\newcommand{\ExamDraws}{}
+\newcommand{\SelectTopic}[2]{%
+    \expandafter\def\expandafter\ExamDraws\expandafter{\ExamDraws\DrawTopic{#1}{#2}}}
+\input{config.tex}
+
+%%% 1. Setup for Unicode and Thai Language %%%
+\usepackage{fontspec}
+\usepackage{xltxtra}
+\usepackage{tikz}
+\usepackage{multicol}
+\usepackage{xcolor}
+\usepackage{array}
+\usepackage[most]{tcolorbox}
+
+% --- FONT (before automultiplechoice: AMC sizes some spacing from it) ---
+\ifCMUFont
+% Light for body text and Regular for bold: CMU Regular as body text prints
+% almost bold. License: ../fonts/CMU/CMU-FONT-licence-th.pdf.
+\setmainfont[
+    Path = ../fonts/CMU/,
+    Extension = .ttf,
+    UprightFont = *-Light,
+    BoldFont = *-Regular,
+    ItalicFont = *-Italic,
+    BoldItalicFont = *-BoldItalic,
+    Scale = 0.9
+]{CMU}
+\else
+\setmainfont[
+    Path = ../fonts/THSarabunNew/,
+    Extension = .ttf,
+    UprightFont = * ,
+    BoldFont = * Bold,
+    ItalicFont = * Italic,
+    BoldItalicFont = * BoldItalic,
+    Scale = 1.5
+]{THSarabunNew}
+\fi
+
+% --- THAI SPACING ---
+\XeTeXlinebreaklocale "th"
+\XeTeXlinebreakskip = 0pt plus 1pt
+\linespread{1.0}
+\tolerance=5000
+\emergencystretch=20pt
+
+\usepackage[box,completemulti,separateanswersheet]{automultiplechoice}
+% Package defaults (6 bits each) only encode values up to 64; this exam runs
+% past that (page count, check code), so widen both to 9 bits (up to 511).
+% @ must be a "letter" catcode to reach the package's internal macros.
+\makeatletter
+\def\AMC@NCBpage{9}
+\def\AMC@NCBcheck{9}
+\makeatother
+\usepackage{totcount}
+
+\usepackage{environ}   % for ../common/short-choices.tex
+\ifShortChoicesOnLine\input{../common/short-choices.tex}\fi
+\regtotcounter{AMCquestionaff}
+
+% =========================================================
+%  🔧 TOPIC SELECTION (DO NOT EDIT)
+% =========================================================
+% \SelectTopic{group}{count} → copies N random questions
+% from the given group into the "selected" pool. The group is shuffled once
+% here, outside \onecopy, so every copy gets the SAME N questions (a random
+% pick, not the first N in file order); \shufflegroup{selected} inside
+% \onecopy then gives each copy its own order.
+\newcommand{\DrawTopic}[2]{%
+    \shufflegroup{#1}%
+    \copygroup[#2]{#1}{selected}%
+}
+
+% =========================================================
+%  📚 LOAD ALL QUESTION BANKS, THEN DRAW config.tex's \SelectTopic LINES
+% =========================================================
+% Shared bank lives one level up, in questions/ — every sitting
+% folder draws from it.
+% One line per chapter file. Add a line when you add a file to questions/.
+\input{../questions/01-digital-economy-basics.tex}
+\input{../questions/02-data-and-cloud.tex}
+\ExamDraws
+
+% --- AMC FORMATTING ---
+\def\AMCbeginQuestion#1#2{\par\noindent\textbf{#1.}~#2}
+\def\AMCformQuestion#1{\vspace{-0.15cm}\par\noindent\makebox[1.9em][r]{\textbf{#1.}}}
+\setdefaultgroupmode{withoutreplacement}
+
+% --- AMC BOX STYLE ---
+% Absolute sizes (the TH Sarabun 1.5x values of 2.5ex/.4ex/.1em/.5em/.3em), so the
+% bubbles and the ID grid keep the same geometry whatever main font is loaded;
+% \IDWriteBoxes below depends on the 7.29 mm column pitch this gives.
+\AMCboxStyle{shape=oval,size=12.75pt,down=2.04pt,rule=.5pt,outsidesep=1.5pt,color=black}
+\AMCcodeHspace=7.5pt
+\AMCcodeVspace=7.5pt
+\AMCformHSpace=4.5pt
+
+% --- COVER PAGE SHADES (black and white only; the exam is printed in mono) ---
+\definecolor{coverDark}{gray}{0}
+\definecolor{coverGray}{gray}{0.3}
+\definecolor{coverRule}{gray}{0.55}
+\definecolor{coverLight}{gray}{1}   % no background fills: saves toner
+\newcommand{\CoverCell}[3]{%
+    \begin{tabular}{@{}c@{}}{\small\color{coverGray} #1}\\[-0.6ex]{\footnotesize\color{coverGray} #2}\\[0.4ex]{\large\bfseries #3}\end{tabular}}
+\newcommand{\AnsCell}[3]{%
+    \begin{tabular}{@{}c@{}}{\footnotesize\color{coverGray} #1}\\[-0.8ex]{\scriptsize\color{coverGray} #2}\\[0.2ex]{\normalsize\bfseries #3}\end{tabular}}
+% English title and date, set per sitting in config.tex.
+\providecommand{\ExamTitleEN}{}
+\providecommand{\ExamDateEN}{}
+\providecommand{\ExamDateNum}{\ExamDate}
+% Thai date with the English date under it (cover and answer-sheet cells).
+\newcommand{\ExamDateBoth}[1]{%
+    \begin{tabular}{@{}c@{}}\ExamDate\\[-0.3ex]{#1\mdseries\color{coverGray}\ExamDateEN}\end{tabular}}
+\providecommand{\CourseName}{Course Name}   % override in config.tex if needed
+
+% --- QUESTION PAGES ---
+\setlength{\AMCinterBquest}{3.2ex}
+\setlength{\columnseprule}{0.4pt}
+\renewcommand{\columnseprulecolor}{\color{coverRule}}
+
+% Footer on the question pages only (not the cover, not the answer sheet), centered: course | exam | page.
+% AMC's page style owns the header/footer slots (corner marks), so the footer is
+% drawn in the shipout foreground layer instead and never touches the marks.
+\newif\ifExamFooter
+\AddToHook{shipout/foreground}{%
+  \ifExamFooter\ifnum\value{page}>1
+    \put(\dimexpr 1in+\oddsidemargin\relax,-\dimexpr\paperheight-1.7cm\relax){%
+      \makebox[\textwidth][c]{\small\color{coverGray}%
+        \CourseCode\ \CourseName\ \ \textbar\ \ \ExamTitle\ \ \textbar\ \ หน้า \thepage}}%
+  \fi\fi}
+
+% Nine write-in boxes, one above each column of the \AMCcode{id}{9} grid.
+% The grid's column pitch is 7.29 mm and each circle is 4.66 mm wide (measured
+% from data/layout.sqlite), so each box is centered 1.57 mm into its 7.29 mm cell (checked on a 200 dpi render);
+% centering this picture and the grid in the same box lines them up.
+\newcommand{\IDWriteBoxes}{%
+  \begin{tikzpicture}
+    \useasboundingbox (0,0) rectangle (9*7.29mm, 7.5mm);
+    \foreach \i in {0,...,8}
+      \draw[coverDark, line width=0.5pt, rounded corners=0.6mm]
+        (\i*7.29mm+1.57mm-2.9mm, 0) rectangle ++(5.8mm, 7.5mm);
+  \end{tikzpicture}}
+
+% Boxed section title used on the answer sheet (same look as the cover's boxes).
+\tcbset{examtitled/.style={enhanced, colback=white, colframe=coverDark, boxrule=0.5pt, arc=2mm,
+    left=3mm, right=3mm, top=3mm, bottom=2mm, fonttitle=\small\bfseries,
+    coltitle=coverDark, colbacktitle=white,
+    attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+    boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}}}
+
+
+% Framed answer-sheet boxes (name, student ID). AMC records every bubble and
+% zone position with \pdfsavepos, which cannot see the coordinate shift
+% tcolorbox's enhanced skin applies to its content (it draws it inside a TikZ
+% node), so an \AMCcode or \namefield placed inside the box is detected ~4 mm
+% off in the scan. The content is therefore typeset into a saved box *outside*
+% the tcolorbox, and the empty frame is drawn first, behind it.
+% #1 title, #2 extra space below the content, #3 content.
+\newsavebox{\SheetBoxContent}
+\newcommand{\SheetBox}[3]{%
+  \sbox{\SheetBoxContent}{%
+    \begin{minipage}[t]{\dimexpr\linewidth-6mm-1pt\relax}#3\end{minipage}}%
+  \par\noindent
+  \begin{tcolorbox}[examtitled, title={#1},
+      height=\dimexpr\ht\SheetBoxContent+\dp\SheetBoxContent+5mm+#2+1pt\relax]
+  \end{tcolorbox}%
+  \par\nointerlineskip
+  \vspace{-\dimexpr\ht\SheetBoxContent+\dp\SheetBoxContent+2mm+#2+0.5pt\relax}%
+  \noindent\hspace*{\dimexpr3mm+0.5pt\relax}\usebox{\SheetBoxContent}\par
+  \vspace{\dimexpr2mm+#2\relax}}
+
+\newcommand{\IDSheetBox}{%
+  \SheetBox{รหัสนักศึกษา / Student ID}{3mm}{%
+    \centering\vspace{0.5mm}
+    {\footnotesize เขียนรหัสลงในช่อง แล้วฝนวงกลมใต้ช่องให้ตรงกัน}\\[-0.4ex]
+    {\footnotesize\color{coverGray} Write your ID, then fill the circles below.}\\[1mm]
+    \IDWriteBoxes\\[1.2mm]
+    \AMCcode{id}{9}}}
+
+\newcommand{\NameSheetBox}{%
+  \SheetBox{ชื่อ - นามสกุล / Name}{2mm}{%
+    \namefield{\begin{minipage}{\linewidth}
+        \vspace{5mm}
+        \dotfill\par
+        \vspace{1mm}
+    \end{minipage}}}}
+
+\begin{document}
+\raggedbottom
+
+% Start of AMC exam generation
+\onecopy{\NumCopies}{
+
+    % =========================================================
+    % 1. EXAM COVER PAGE
+    % =========================================================
+    \shufflegroup{selected}
+    \global\ExamFootertrue
+
+    % --- Header: college logo and name ---
+    \noindent
+    \begin{minipage}[c]{2.3cm}
+        \includegraphics[width=2.3cm]{../logos/logo-ICDI-gray.png}
+    \end{minipage}\hspace{0.4cm}%
+    \begin{minipage}[c]{\dimexpr\linewidth-2.7cm\relax}
+        {\Large\bfseries วิทยาลัยนานาชาตินวัตกรรมดิจิทัล มหาวิทยาลัยเชียงใหม่}\\[-0.2ex]
+        {\color{coverGray}International College of Digital Innovation, Chiang Mai University}
+    \end{minipage}
+
+    \vspace{0.5cm}
+
+    % --- Title band ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, arc=2mm,
+        boxrule=0.8pt, left=6mm, right=6mm, top=2.5mm, bottom=2.5mm, halign=center]
+        {\XeTeXlinebreakskip=0pt\relax\fontsize{24}{28}\selectfont\bfseries \ExamTitle}\\[1.2ex]
+        {\Large\color{coverGray} \ExamTitleEN}\\[0.6ex]
+        {\large \CourseCode\ \ \CourseName}
+    \end{tcolorbox}
+
+    \vspace{0.3cm}
+
+    % --- Exam facts: five cells ---
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverRule, boxrule=0.5pt,
+        arc=2mm, left=3mm, right=3mm, top=1.2mm, bottom=1.6mm]
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccc@{}}
+            \CoverCell{กระบวนวิชา}{Course}{\CourseCode} &
+            \CoverCell{ตอน}{Section}{\CourseSection} &
+            \CoverCell{วันที่สอบ}{Date}{\ExamDateBoth{\small}} &
+            \CoverCell{เวลา}{Time}{\ExamTime} &
+            \CoverCell{จำนวนข้อสอบ}{No.\ of questions}{\total{AMCquestionaff}}
+        \end{tabular*}
+    \end{tcolorbox}
+
+    \vspace{0.3cm}
+
+    % --- Student details ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, boxrule=0.5pt, arc=2mm,
+        left=4mm, right=4mm, top=3mm, bottom=3mm,
+        title={\bfseries ข้อมูลนักศึกษา / Student information}, fonttitle=\normalsize,
+        coltitle=coverDark, colbacktitle=white, attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+        boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}]
+        \vspace{1.5mm}
+        ชื่อ - นามสกุล / Name\enspace\dotfill\par
+        \vspace{3mm}
+        \noindent รหัสนักศึกษา / Student ID\enspace
+        \begin{tikzpicture}[baseline=1.5mm]
+            \foreach \i in {0,...,8} {\draw[coverDark, line width=0.5pt] (\i*0.62,0) rectangle ++(0.56,0.62);}
+        \end{tikzpicture}%
+
+    \end{tcolorbox}
+
+    \vspace{0.2cm}
+
+    % --- Instructions ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverRule, boxrule=0.5pt, arc=2mm,
+        left=3mm, right=4mm, top=3mm, bottom=2mm,
+        title={\bfseries คำชี้แจง / Instructions}, fonttitle=\normalsize,
+        coltitle=coverDark, colbacktitle=white, attach boxed title to top left={xshift=4mm, yshift=-2.2mm},
+        boxed title style={arc=1.5mm, boxrule=0.5pt, colframe=coverDark}]
+        \vspace{1mm}
+        \linespread{1.3}\selectfont
+        \begin{enumerate}\setlength{\itemsep}{3pt}\setlength{\parskip}{0pt}
+            \item ข้อสอบมีจำนวนทั้งสิ้น \textbf{\total{AMCquestionaff} ข้อ} ให้ฝนคำตอบลงใน\textbf{กระดาษคำตอบ}ที่แยกไว้ท้ายเล่มเท่านั้น
+            \item ก่อนเข้าห้องสอบให้กรรมการคุมสอบประกาศให้นักศึกษาทราบว่า สิ่งของใดที่อนุญาตให้นำเข้าห้องสอบ และสิ่งของใดที่ห้ามนำเข้าห้องสอบ
+            \item ให้นักศึกษาเขียนชื่อ - นามสกุล และรหัสประจำตัว ให้ชัดเจน
+            \item ก่อนเริ่มดำเนินการสอบให้กรรมการคุมสอบประกาศในห้องสอบให้นักศึกษาทราบเกี่ยวกับชื่อกระบวนวิชาที่จัดสอบ
+            \item ให้นักศึกษาปฏิบัติตามคำชี้แจงของกรรมการคุมสอบอย่างเคร่งครัด
+            \item ให้ปฏิบัติตามข้อบังคับมหาวิทยาลัยเชียงใหม่ ว่าด้วยการสอบของนักศึกษา พ.ศ. 2554 อย่างเคร่งครัด
+        \end{enumerate}
+    \end{tcolorbox}
+
+    \vspace{0.15cm}
+
+    % --- Integrity warning ---
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverDark, boxrule=0pt,
+        leftrule=0.6mm, sharp corners, left=4mm, right=4mm, top=1.5mm, bottom=1.5mm]
+        \linespread{1.3}\selectfont
+        \textbf{คำเตือน:} การทุจริตหรือกระทำการใด ๆ ซึ่งเป็นการทุจริตในการสอบ
+        \textbf{เป็นความผิดวินัยร้ายแรง} และ\textbf{จะได้รับการพิจารณาให้อักษรลำดับขั้น F หรือ U}
+    \end{tcolorbox}
+
+    \vspace{0.4cm}
+
+    % --- Agreement ---
+    \begin{center}
+        \textbf{การเข้าสอบถือว่านักศึกษายอมรับและจะปฏิบัติตามคำชี้แจงข้างต้นทุกประการ}\\[0.2ex]
+        {\color{coverGray}By taking this exam, you agree to the terms above.}
+    \end{center}
+
+    \vfill
+
+    \ifQuestionsOnCoverBack
+        \clearpage
+    \else
+        \AMCcleardoublepage
+    \fi
+
+    % =========================================================
+    % 2. QUESTIONS SECTION
+    % =========================================================
+
+    \ifOneColumnQuestions
+        \insertgroup{selected}
+    \else
+        \setlength{\columnsep}{.8cm}
+        \begin{multicols}{2}
+            \insertgroup{selected}
+        \end{multicols}
+    \fi
+
+    \cleardoublepage
+
+    % =========================================================
+    % 3. ANSWER SHEET SECTION
+    % =========================================================
+    \AMCformBegin
+    \global\ExamFooterfalse
+
+    % --- Title band: sheet name, then the exam on the next line ---
+    \begin{tcolorbox}[enhanced, colback=white, colframe=coverDark, arc=2mm, boxrule=0.8pt,
+        left=5mm, right=5mm, top=1mm, bottom=1.2mm]
+        {\XeTeXlinebreakskip=0pt\relax\fontsize{16}{19}\selectfont\bfseries กระดาษคำตอบ}
+        \hspace{0.5em}{\large\color{coverGray} ANSWER SHEET}\\[-0.2ex]
+        {\normalsize\bfseries \ExamTitle}\hspace{0.5em}{\normalsize\color{coverGray}\ExamTitleEN}
+    \end{tcolorbox}
+
+    \vspace{-0.1cm}
+    \begin{tcolorbox}[enhanced, colback=coverLight, colframe=coverRule, boxrule=0.5pt,
+        arc=2mm, left=3mm, right=3mm, top=0.8mm, bottom=1.2mm]
+        \begin{tabular*}{\linewidth}{@{\extracolsep{\fill}}ccccc@{}}
+            \AnsCell{กระบวนวิชา}{Course}{\CourseCode} &
+            \AnsCell{ตอน}{Section}{\CourseSection} &
+            \AnsCell{วันที่สอบ}{Date}{\ExamDateNum} &
+            \AnsCell{เวลา}{Time}{\ExamTime} &
+            \AnsCell{จำนวนข้อสอบ}{No.\ of questions}{\total{AMCquestionaff}}
+        \end{tabular*}
+    \end{tcolorbox}
+
+    \vspace{0.15cm}
+
+    % --- Left: name, then instructions. Right: student ID grid. ---
+    \noindent
+    \begin{minipage}[t]{0.47\linewidth}
+        \vspace{0pt}
+        \NameSheetBox
+
+        \vspace{0.1cm}
+        \begin{tcolorbox}[examtitled, title={คำชี้แจง / Instructions}]
+            \vspace{0.5mm}\raggedright\small
+            \textbf{ดึงกระดาษคำตอบแผ่นนี้ออกจากเล่ม}\\
+            {\color{coverGray}Pull this answer sheet (the last page) out of the booklet.}
+
+            \vspace{1.5mm}
+            ใช้ปากกาหรือดินสอ 2B ฝนวงกลมให้\textbf{เต็มวง}\\
+            {\color{coverGray}Use a pen or a 2B pencil. Fill the circle completely.}
+
+            \vspace{2mm}
+            \centering
+            \begin{tabular}{c@{\hspace{1.2cm}}c}
+                \begin{tikzpicture}[baseline=-0.5ex]
+                    \fill (0,0) circle (0.2);
+                \end{tikzpicture} &
+                \begin{tikzpicture}[baseline=-0.5ex]
+                    \draw (0,0) circle (0.2);
+                    \draw[line width=0.6pt] (-0.14,0.14) -- (0.14,-0.14);
+                    \draw[line width=0.6pt] (-0.14,-0.14) -- (0.14,0.14);
+                \end{tikzpicture} \\[0.8ex]
+                \textbf{ใช้ได้} {\small\color{coverGray}Valid} &
+                \textbf{ใช้ไม่ได้} {\small\color{coverGray}Invalid}
+            \end{tabular}
+        \end{tcolorbox}
+    \end{minipage}\hfill
+    \begin{minipage}[t]{0.5\linewidth}
+        \vspace{0pt}
+        \IDSheetBox
+    \end{minipage}
+
+    \vspace{0.25cm}
+    {\color{coverDark}\hrule height 0.8pt}
+    \vspace{0.1cm}
+
+    \setlength{\columnsep}{0.5cm}
+    \begin{multicols}{3}
+        \AMCform
+    \end{multicols}
+
+    % Pad every copy to an even number of pages, or duplex printing puts the
+    % next copy on the back of this one's last page (the 180-question final
+    % runs to 29 or 31 pages). The question part already starts the answer
+    % sheet on a front side with \cleardoublepage above.
+    \clearpage
+    \ifodd\value{page}\else\null\clearpage\fi
+} 
+
+\end{document}
