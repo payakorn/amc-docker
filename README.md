@@ -446,3 +446,8 @@ out to the same `amc-*` scripts documented above, which read the project's
 `options.xml` for their parameters. When it reaches something that needs a human
 eye on an image, it says so and hands over. That is why it cannot drift from
 AMC — there is nothing in it to drift.
+
+## License
+
+MIT, see [LICENSE](LICENSE). This covers the files in this repository. Auto Multiple Choice
+itself is installed from Debian's `auto-multiple-choice` package and keeps its own GPL license.
